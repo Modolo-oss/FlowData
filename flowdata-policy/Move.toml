@@ -1,0 +1,14 @@
+[package]
+name = "flowdata_policy"
+edition = "2024.beta"
+
+[addresses]
+flowdata_policy = "0x0"  # Will be replaced automatically by publish
+
+[dependencies]
+Sui = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "main" }
+
+
+
+
+
