@@ -42,10 +42,22 @@ export default function UploadPage() {
     const files = e.dataTransfer.files
     if (files && files.length > 0) {
       const file = files[0]
-      if (file.type === 'text/csv' || file.name.endsWith('.csv')) {
+      // Accept multiple file types
+      const allowedTypes = [
+        'text/csv', 'application/json', 'text/plain',
+        'application/pdf',
+        'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp'
+      ]
+      const allowedExtensions = ['.csv', '.json', '.txt', '.pdf', '.doc', '.docx', '.png', '.jpg', '.jpeg', '.gif', '.webp']
+      
+      const isValidType = allowedTypes.includes(file.type) || 
+        allowedExtensions.some(ext => file.name.toLowerCase().endsWith(ext))
+      
+      if (isValidType) {
         setUploadedFile(file)
       } else {
-        toast.error('Please upload a CSV file')
+        toast.error('Unsupported file type. Please upload CSV, JSON, PDF, Word, or Image files.')
       }
     }
   }
@@ -54,10 +66,22 @@ export default function UploadPage() {
     const files = e.target.files
     if (files && files.length > 0) {
       const file = files[0]
-      if (file.type === 'text/csv' || file.name.endsWith('.csv')) {
+      // Accept multiple file types
+      const allowedTypes = [
+        'text/csv', 'application/json', 'text/plain',
+        'application/pdf',
+        'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp'
+      ]
+      const allowedExtensions = ['.csv', '.json', '.txt', '.pdf', '.doc', '.docx', '.png', '.jpg', '.jpeg', '.gif', '.webp']
+      
+      const isValidType = allowedTypes.includes(file.type) || 
+        allowedExtensions.some(ext => file.name.toLowerCase().endsWith(ext))
+      
+      if (isValidType) {
         setUploadedFile(file)
       } else {
-        toast.error('Please upload a CSV file')
+        toast.error('Unsupported file type. Please upload CSV, JSON, PDF, Word, or Image files.')
       }
     }
   }
@@ -137,7 +161,7 @@ export default function UploadPage() {
               Upload Your Data
             </h1>
             <p className="text-lg text-muted-foreground text-balance max-w-2xl mx-auto">
-              Share your dataset with the federated learning network. AI will analyze it, generate insights, and create visualizations—all while keeping your data private.
+              Upload your dataset for AI-powered analysis. Get natural language insights, interactive visualizations, and on-chain verified results—all while keeping your data private.
             </p>
           </div>
 
@@ -153,7 +177,7 @@ export default function UploadPage() {
               {!wallet.connected ? (
                 <div className="space-y-3">
                   <p className="text-sm text-muted-foreground">
-                    Connect your Sui Wallet for encrypted federated learning, or use ephemeral encryption.
+                    Connect your Sui Wallet for encrypted data analysis, or use ephemeral encryption.
                   </p>
                   <Button
                     type="button"
@@ -263,17 +287,16 @@ export default function UploadPage() {
                   <input
                     type="file"
                     id="file-input"
-                    multiple
                     onChange={handleFileInput}
                     className="hidden"
-                    accept=".csv,.json,.parquet,.npy,.npz"
+                    accept=".csv,.json,.txt,.pdf,.doc,.docx,.png,.jpg,.jpeg,.gif,.webp"
                   />
                   <label htmlFor="file-input" className="cursor-pointer flex flex-col items-center gap-3">
                     <Upload className="w-10 h-10 text-primary opacity-60" />
                     <div>
                       <p className="text-lg font-semibold text-foreground">Drag files here or click to browse</p>
                       <p className="text-sm text-muted-foreground mt-1">
-                        CSV, JSON, Parquet, NumPy • Up to 5GB per file
+                        CSV, JSON, PDF, Word, Images • Up to 200MB per file
                       </p>
                     </div>
                   </label>
@@ -321,7 +344,7 @@ export default function UploadPage() {
                 <div className="text-sm text-foreground">
                   <p className="font-medium mb-1">Your data stays private</p>
                   <p className="text-muted-foreground">
-                    Raw data never leaves your device. Only encrypted model updates are shared with federated learning nodes. All insights are verified on-chain.
+                    Raw data is analyzed securely. Audit payloads are encrypted with Seal before storing on Walrus. All insights are verified on-chain.
                   </p>
                 </div>
               </CardContent>
@@ -354,10 +377,10 @@ export default function UploadPage() {
                 <CardTitle className="text-base">What Happens Next?</CardTitle>
               </CardHeader>
               <CardContent className="text-sm text-muted-foreground space-y-2">
-                <p>1. Data is securely uploaded to federated nodes</p>
-                <p>2. AI generates natural language insights</p>
-                <p>3. Interactive visualizations are created</p>
-                <p>4. Results verified on Sui blockchain</p>
+                <p>1. Data is securely analyzed in the backend</p>
+                <p>2. AI generates natural language insights from your data</p>
+                <p>3. Interactive charts and visualizations are created</p>
+                <p>4. Results encrypted and stored on Walrus, verified on Sui blockchain</p>
               </CardContent>
             </Card>
 
@@ -368,8 +391,10 @@ export default function UploadPage() {
               <CardContent className="text-sm text-muted-foreground space-y-2">
                 <p>• CSV — Comma-separated values</p>
                 <p>• JSON — Structured data</p>
-                <p>• Parquet — Columnar storage</p>
-                <p>• NumPy — Python arrays (.npy/.npz)</p>
+                <p>• PDF — Document files</p>
+                <p>• Word — .doc, .docx documents</p>
+                <p>• Images — PNG, JPEG, GIF, WebP</p>
+                <p>• Text — Plain text files</p>
               </CardContent>
             </Card>
           </div>

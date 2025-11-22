@@ -4,43 +4,21 @@ services:
     build:
       context: ./backend
     environment:
-      - COORDINATOR_PORT=3000
-      - WORKER_NODES=http://worker1:3001,http://worker2:3002
+      - COORDINATOR_PORT=3002
       - MAX_UPLOAD_MB=200
-      - WALRUS_RPC_URL=${WALRUS_RPC_URL}
-      - WALRUS_API_KEY=${WALRUS_API_KEY}
-      - SEAL_ENDPOINT=${SEAL_ENDPOINT}
-      - SEAL_API_KEY=${SEAL_API_KEY}
       - SUI_NETWORK=${SUI_NETWORK:-testnet}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - OPENROUTER_MODEL=${OPENROUTER_MODEL}
     ports:
-      - "3000:3000"
+      - "3002:3002"
     command: ["node","dist/coordinator/server.js"]
-    depends_on:
-      - worker1
-      - worker2
-  worker1:
-    image: python:3.11-slim
-    working_dir: /app
-    volumes:
-      - ./:/app
-    environment:
-      - WORKER1_PORT=3001
-    command: bash -c "pip install -r worker_nodes/worker_1/requirements.txt && python -m worker_nodes.worker_1.main"
-  worker2:
-    image: python:3.11-slim
-    working_dir: /app
-    volumes:
-      - ./:/app
-    environment:
-      - WORKER2_PORT=3002
-    command: bash -c "pip install -r worker_nodes/worker_2/requirements.txt && python -m worker_nodes.worker_2.main"
   frontend:
     build:
       context: ./frontend
     ports:
-      - "5173:80"
+      - "3000:3000"
     environment:
-      - VITE_COORDINATOR_URL=http://localhost:3000
+      - NEXT_PUBLIC_API_URL=http://localhost:3002
     depends_on:
       - coordinator
 

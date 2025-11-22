@@ -17,25 +17,7 @@ export interface ProgressEvent {
   data: any;
 }
 
-export interface WorkerNode {
-  worker: string;
-  ok: boolean;
-  nodeId?: string;
-  suiAddress?: string;
-  cpuCores?: number;
-  hardwareInfo?: any;
-  signatureAvailable?: boolean;
-  display?: string;
-  detail?: any;
-  error?: string;
-}
-
-export interface MonitorNodesResponse {
-  ok: boolean;
-  coordinator?: { port: number };
-  workers: WorkerNode[];
-  display?: string;
-}
+// Worker nodes removed - direct analysis flow
 
 export interface AnalysisResult {
   success: boolean;
@@ -54,7 +36,7 @@ export interface AnalysisResult {
 }
 
 /**
- * Upload CSV file to backend for federated learning
+ * Upload file to backend for AI-powered data analysis
  */
 export async function uploadFile(
   file: File,
@@ -153,31 +135,14 @@ export function createProgressStream(
   return eventSource;
 }
 
-/**
- * Get monitor nodes status
- */
-export async function getMonitorNodes(): Promise<MonitorNodesResponse> {
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/monitor/nodes`);
-    if (!response.ok) {
-      throw new Error('Failed to fetch nodes');
-    }
-    return await response.json();
-  } catch (error: any) {
-    return {
-      ok: false,
-      workers: [],
-      error: error.message || 'Network error',
-    };
-  }
-}
+// getMonitorNodes removed - no workers in new flow
 
 /**
  * Get health status
  */
 export async function getHealthStatus() {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/health/full`);
+    const response = await fetch(`${API_BASE_URL}/api/health`);
     if (!response.ok) {
       throw new Error('Health check failed');
     }
@@ -205,6 +170,62 @@ export async function getAnalysisResults(jobId: string): Promise<AnalysisResult>
       success: false,
       error: error.message || 'Network error',
     };
+  }
+}
+
+/**
+ * Regenerate insights with new prompt
+ * Fetches analysisSummary from Walrus and generates new LLM insights
+ */
+export interface RegenerateInsightsRequest {
+  blobId: string;
+  prompt?: string;
+  sessionKey?: string;
+}
+
+export interface RegenerateInsightsResponse {
+  success: boolean;
+  result?: {
+    llmInsights: {
+      title: string;
+      summary: string;
+      keyFindings?: string[];
+      recommendations?: string[];
+      chartRecommendations?: string[];
+    };
+    chartRecommendations?: string[];
+    updatedAt: string;
+    chartData?: any;
+    analysisSummary?: any;
+  };
+  error?: string;
+}
+
+export async function regenerateInsights(
+  request: RegenerateInsightsRequest
+): Promise<RegenerateInsightsResponse> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/regenerate-insights`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        blobId: request.blobId,
+        prompt: request.prompt || '',
+        sessionKey: request.sessionKey,
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Regenerate failed' }));
+      return { success: false, error: error.error || 'Regenerate failed' };
+    }
+
+    const data = await response.json();
+    return { success: true, result: data.result };
+  } catch (error: any) {
+    return { success: false, error: error.message || 'Network error' };
   }
 }
 

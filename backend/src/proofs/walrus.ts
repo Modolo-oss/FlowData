@@ -25,20 +25,7 @@ function getWalrusClient() {
 			walrus({
 				storageNodeClientOptions: {
 					timeout: 120_000, // 120 seconds
-					fetch: (url, init) => {
-						// Custom fetch with undici Agent for better connectivity
-						const agent = new Agent({
-							connect: {
-								timeout: 120_000, // 120 seconds
-							},
-							headersTimeout: 120_000,
-							bodyTimeout: 120_000,
-							onError: (error) => {
-								console.error("[WALRUS] Storage node error:", error);
-							},
-						});
-						return fetch(url, { ...init, dispatcher: agent });
-					},
+					fetch: fetch as any, // Use undici fetch directly
 				},
 			})
 		);
@@ -99,22 +86,44 @@ function getSigner(): Ed25519Keypair {
 	}
 }
 
-export async function storeToWalrus(payload: unknown): Promise<{ cid: string; blobId?: string; blobObjectId?: string; walrusScanUrl?: string }> {
+/**
+ * Store ANY binary data to Walrus (up to ~14 GB per file)
+ * Supports: images, videos, PDF, Word, JSON, CSV, any binary file
+ */
+export async function storeToWalrus(
+	blob: Buffer | Uint8Array | string,
+	options?: { isJson?: boolean }
+): Promise<{ cid: string; blobId?: string; blobObjectId?: string; walrusScanUrl?: string }> {
 	const signer = getSigner();
 	const signerAddress = signer.getPublicKey().toSuiAddress();
-	const buffer = Buffer.from(JSON.stringify(payload), "utf-8");
-	const fileBytes = new Uint8Array(buffer);
+	
+	// Convert to Uint8Array (binary format)
+	let fileBytes: Uint8Array;
+	if (Buffer.isBuffer(blob)) {
+		fileBytes = new Uint8Array(blob);
+	} else if (typeof blob === "string") {
+		// If string, convert to bytes (could be JSON or plain text)
+		if (options?.isJson) {
+			fileBytes = new Uint8Array(Buffer.from(blob, "utf-8"));
+		} else {
+			// Plain string - treat as UTF-8
+			fileBytes = new Uint8Array(Buffer.from(blob, "utf-8"));
+		}
+	} else {
+		fileBytes = blob; // Already Uint8Array
+	}
 	
 	try {
 		const client = getWalrusClient();
 		
 		console.log(`[WALRUS] Using keypair from WALRUS_SIGNER_PRIVATE_KEY (public key: ${signerAddress})`);
 		console.log(`[WALRUS] Preparing upload via official SDK:`);
-		console.log(`[WALRUS]   - Blob size: ${fileBytes.length} bytes`);
+		console.log(`[WALRUS]   - Blob size: ${fileBytes.length} bytes (${(fileBytes.length / 1024 / 1024).toFixed(2)} MB)`);
 		console.log(`[WALRUS]   - Signer address: ${signerAddress}`);
 		
 		// Upload using official SDK pattern: client.walrus.writeBlob()
 		// writeBlob() returns: { blobId, blobObject? }
+		// Walrus supports ANY binary data (images, videos, PDF, Word, JSON, CSV, etc.)
 		const result = await client.walrus.writeBlob({
 			blob: fileBytes,
 			deletable: false,
@@ -151,8 +160,12 @@ export async function storeToWalrus(payload: unknown): Promise<{ cid: string; bl
 
 /**
  * Read blob from Walrus by blobId
+ * Automatically decrypts if encrypted with Seal
  */
-export async function readFromWalrus(blobId: string): Promise<{ data: any; metadata?: any }> {
+export async function readFromWalrus(
+	blobId: string,
+	sessionKey?: string
+): Promise<{ data: any; metadata?: any; encrypted?: boolean }> {
 	try {
 		const client = getWalrusClient();
 		
@@ -164,16 +177,44 @@ export async function readFromWalrus(blobId: string): Promise<{ data: any; metad
 		});
 		
 		// Parse JSON data
-		const data = JSON.parse(new TextDecoder().decode(result.blob));
+		const storedData = JSON.parse(new TextDecoder().decode(result.blob));
 		
+		// Check if encrypted
+		if (storedData.encrypted && storedData.data && storedData.txBytes) {
+			console.log(`[WALRUS] Blob is encrypted, decrypting...`);
+			
+			// Decrypt using Seal
+			const { decryptAuditPayload } = await import("./seal-audit.js");
+			const decryptedData = await decryptAuditPayload(
+				storedData.data,
+				storedData.txBytes,
+				sessionKey
+			);
+			
+			console.log(`[WALRUS] ✅ Blob decrypted successfully`);
+			
+			return {
+				data: decryptedData,
+				metadata: {
+					blobId: result.blobId,
+					size: result.blob.length,
+					encrypted: true,
+				},
+				encrypted: true,
+			};
+		}
+		
+		// Plain data (not encrypted)
 		console.log(`[WALRUS] ✅ Blob read successfully, size: ${result.blob.length} bytes`);
 		
 		return {
-			data,
+			data: storedData,
 			metadata: {
 				blobId: result.blobId,
 				size: result.blob.length,
+				encrypted: false,
 			},
+			encrypted: false,
 		};
 	} catch (error: any) {
 		console.error(`[WALRUS] ❌ Failed to read blob ${blobId}:`, error?.message || error);

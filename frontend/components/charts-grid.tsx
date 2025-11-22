@@ -6,9 +6,14 @@ import { useEffect, useState } from 'react'
 
 interface ChartsGridProps {
   data: {
-    trends: any[]
-    clusters: any[]
-    correlationMatrix: any[]
+    trends?: Array<{ date: string; value: number; label?: string }>
+    clusters?: Array<{ x: number; y: number; cluster: string; label: string }>
+    outliers?: Array<{ column: string; row: number; value: number; deviation: number }>
+    correlationMatrix?: Array<{ x: string; y: string; value: number }>
+    keyValueBarChart?: {
+      title: string
+      data: Array<{ name: string; value: number }>
+    }
     summary?: {
       total_samples: number
       numeric_columns: number
@@ -43,50 +48,27 @@ export default function ChartsGrid({ data }: ChartsGridProps) {
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      {/* Trend Forecast */}
-      <Card className="bg-card border-border">
-        <CardHeader>
-          <CardTitle className="text-lg">Trend Forecast</CardTitle>
-          <p className="text-sm text-muted-foreground mt-1">Historical actuals vs AI forecast</p>
-        </CardHeader>
-        <CardContent>
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={data.trends}>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-              <XAxis dataKey="month" stroke="var(--muted-foreground)" />
-              <YAxis stroke="var(--muted-foreground)" />
-              <Tooltip 
-                contentStyle={{ 
-                  backgroundColor: 'var(--card)',
-                  border: '1px solid var(--border)',
-                  borderRadius: '8px',
-                  color: 'var(--foreground)'
-                }}
-              />
-              <Legend />
-              <Line type="monotone" dataKey="actual" stroke="var(--primary)" strokeWidth={2} dot={{ fill: 'var(--primary)', r: 4 }} />
-              <Line type="monotone" dataKey="forecast" stroke="var(--muted-foreground)" strokeDasharray="5 5" strokeWidth={2} />
-            </LineChart>
-          </ResponsiveContainer>
-        </CardContent>
-      </Card>
-
-      {/* Cluster Visualization - from actual data */}
-      <Card className="bg-card border-border">
-        <CardHeader>
-          <CardTitle className="text-lg">Data Clusters</CardTitle>
-          <p className="text-sm text-muted-foreground mt-1">
-            {data.clusters.length > 0 ? `${data.clusters.length} data points clustered` : "No cluster data available"}
-          </p>
-        </CardHeader>
-        <CardContent>
-          {data.clusters.length > 0 ? (
+      {/* Key-Value Bar Chart - Priority if available */}
+      {data.keyValueBarChart && data.keyValueBarChart.data.length > 0 && (
+        <Card className="bg-card border-border">
+          <CardHeader>
+            <CardTitle className="text-lg">{data.keyValueBarChart.title}</CardTitle>
+            <p className="text-sm text-muted-foreground mt-1">
+              {data.keyValueBarChart.data.length} metrics from your file
+            </p>
+          </CardHeader>
+          <CardContent>
             <ResponsiveContainer width="100%" height={300}>
-              <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
+              <BarChart data={data.keyValueBarChart.data}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                <XAxis dataKey="x" type="number" stroke="var(--muted-foreground)" />
-                <YAxis dataKey="y" type="number" stroke="var(--muted-foreground)" />
-                <ZAxis dataKey="label" />
+                <XAxis 
+                  dataKey="name" 
+                  stroke="var(--muted-foreground)"
+                  angle={-45}
+                  textAnchor="end"
+                  height={80}
+                />
+                <YAxis stroke="var(--muted-foreground)" />
                 <Tooltip 
                   contentStyle={{ 
                     backgroundColor: 'var(--card)',
@@ -95,6 +77,107 @@ export default function ChartsGrid({ data }: ChartsGridProps) {
                     color: 'var(--foreground)'
                   }}
                 />
+                <Legend />
+                <Bar 
+                  dataKey="value" 
+                  fill="var(--primary)" 
+                  name="Value"
+                />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Trend Chart - ONLY if we have time-based trends (not row index!) */}
+      {data.trends && data.trends.length > 0 && (
+        <Card className="bg-card border-border">
+          <CardHeader>
+            <CardTitle className="text-lg">
+              {data.trends[0]?.label || "Trend Analysis"}
+            </CardTitle>
+            <p className="text-sm text-muted-foreground mt-1">
+              {data.trends.length} data points from your file
+            </p>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={300}>
+              <LineChart data={data.trends}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                <XAxis 
+                  dataKey="date" 
+                  stroke="var(--muted-foreground)"
+                  angle={-45}
+                  textAnchor="end"
+                  height={60}
+                />
+                <YAxis stroke="var(--muted-foreground)" />
+                <Tooltip 
+                  contentStyle={{ 
+                    backgroundColor: 'var(--card)',
+                    border: '1px solid var(--border)',
+                    borderRadius: '8px',
+                    color: 'var(--foreground)'
+                  }}
+                />
+                <Legend />
+                <Line 
+                  type="monotone" 
+                  dataKey="value" 
+                  stroke="var(--primary)" 
+                  strokeWidth={2} 
+                  dot={{ fill: 'var(--primary)', r: 4 }} 
+                  name={data.trends[0]?.label || "Value"}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Trend Chart - Hidden if no time-based trends */}
+
+      {/* Cluster Visualization - ONLY if we have meaningful clusters */}
+      {data.clusters && data.clusters.length > 0 && (() => {
+        const uniqueClusters = new Set(data.clusters.map(c => c.cluster));
+        return uniqueClusters.size >= 2 ? (
+          <Card className="bg-card border-border">
+            <CardHeader>
+              <CardTitle className="text-lg">Data Clusters</CardTitle>
+              <p className="text-sm text-muted-foreground mt-1">
+                {data.clusters.length} data points from your file
+              </p>
+            </CardHeader>
+            <CardContent>
+            <ResponsiveContainer width="100%" height={300}>
+              <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                <XAxis 
+                  dataKey="x" 
+                  type="number" 
+                  stroke="var(--muted-foreground)"
+                  label={{ value: 'X Axis', position: 'insideBottom', offset: -5 }}
+                />
+                <YAxis 
+                  dataKey="y" 
+                  type="number" 
+                  stroke="var(--muted-foreground)"
+                  label={{ value: 'Y Axis', angle: -90, position: 'insideLeft' }}
+                />
+                <ZAxis dataKey="label" />
+                <Tooltip 
+                  contentStyle={{ 
+                    backgroundColor: 'var(--card)',
+                    border: '1px solid var(--border)',
+                    borderRadius: '8px',
+                    color: 'var(--foreground)'
+                  }}
+                  formatter={(value: any, name: string, props: any) => [
+                    `${props.payload.label || name}: (${props.payload.x}, ${props.payload.y})`,
+                    name
+                  ]}
+                />
+                <Legend />
                 <Scatter name="Clusters" data={data.clusters} fill="var(--primary)">
                   {data.clusters.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={CLUSTER_COLORS[entry.cluster] || 'var(--primary)'} />
@@ -102,13 +185,10 @@ export default function ChartsGrid({ data }: ChartsGridProps) {
                 </Scatter>
               </ScatterChart>
             </ResponsiveContainer>
-          ) : (
-            <div className="h-[300px] flex items-center justify-center text-muted-foreground">
-              No cluster data available
-            </div>
-          )}
-        </CardContent>
-      </Card>
+            </CardContent>
+          </Card>
+        ) : null;
+      })()}
 
       {/* Summary Statistics */}
       <Card className="bg-card border-border">
@@ -142,16 +222,16 @@ export default function ChartsGrid({ data }: ChartsGridProps) {
         </CardContent>
       </Card>
 
-      {/* Correlation Matrix - from actual data */}
-      <Card className="bg-card border-border">
-        <CardHeader>
-          <CardTitle className="text-lg">Correlation Analysis</CardTitle>
-          <p className="text-sm text-muted-foreground mt-1">
-            {data.correlationMatrix.length > 0 ? `${data.correlationMatrix.length} correlations found` : "No correlation data available"}
-          </p>
-        </CardHeader>
-        <CardContent>
-          {data.correlationMatrix.length > 0 ? (
+      {/* Correlation Matrix - ONLY if we have meaningful correlations */}
+      {data.correlationMatrix && data.correlationMatrix.length > 0 && (
+        <Card className="bg-card border-border">
+          <CardHeader>
+            <CardTitle className="text-lg">Correlation Analysis</CardTitle>
+            <p className="text-sm text-muted-foreground mt-1">
+              {data.correlationMatrix.length} correlations found
+            </p>
+          </CardHeader>
+          <CardContent>
             <div className="space-y-2">
               {data.correlationMatrix.map((item, idx) => (
                 <div key={idx} className="flex items-center justify-between p-3 bg-background rounded-lg">
@@ -172,13 +252,9 @@ export default function ChartsGrid({ data }: ChartsGridProps) {
                 </div>
               ))}
             </div>
-          ) : (
-            <div className="h-[200px] flex items-center justify-center text-muted-foreground">
-              No correlation data available
-            </div>
-          )}
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }

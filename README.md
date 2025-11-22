@@ -1,19 +1,20 @@
 # FlowData Studio
 
-**AI-Powered Federated Data Analysis Platform** with on-chain provenance, privacy-preserving encryption, and real-time insights. Transform your CSV data into beautiful visualizations, AI-generated stories, and shareable insight cards with cryptographic verification.
+**AI-Powered Data Analysis Platform** with on-chain provenance and real-time insights. Transform your files (CSV, JSON, images, PDF, Word) into beautiful visualizations, AI-generated stories, and shareable insight cards with cryptographic verification.
 
 Built for the **Walrus Hackathon** using Sui, Walrus, and Seal SDKs.
 
 ## 🎯 What is FlowData Studio?
 
-FlowData Studio is a **decentralized federated learning platform** that:
+FlowData Studio is an **AI-powered data analysis platform** that:
 
-1. **Analyzes Your Data**: Upload CSV files and get real-time analysis across distributed worker nodes
-2. **Generates AI Insights**: Uses OpenRouter LLM to create natural language stories from your data
-3. **Creates Beautiful Charts**: Auto-generates correlation matrices, trend forecasts, and cluster visualizations from **actual data** (not mock)
-4. **Preserves Privacy**: Encrypts data shards with Seal SDK before distribution
-5. **Proves on Blockchain**: Stores complete audit logs on Walrus and records provenance on Sui
-6. **Shares Insights**: Generate shareable InsightCards with on-chain proof links
+1. **Accepts Any File Format**: Upload CSV, JSON, images, PDF, Word documents, or plain text
+2. **Intelligently Analyzes**: Automatically detects and parses any data structure
+3. **Generates AI Insights**: Uses OpenRouter LLM to create natural language stories from your data
+4. **Creates AI-Generated Charts**: LLM intelligently generates relevant chart visualizations based on your actual data structure
+5. **Stores on Walrus**: Uploads original files to Walrus (up to ~14 GB per file)
+6. **Proves on Blockchain**: Records provenance on Sui blockchain
+7. **Shares Insights**: Generate shareable insight cards with on-chain proof links
 
 ## 🏗️ Architecture
 
@@ -25,33 +26,19 @@ FlowData Studio is a **decentralized federated learning platform** that:
 │  (Port 3000)│  └─ Sui Wallet Integration
 │             │  └─ Real-time Progress (SSE)
 │             │  └─ AI Story & Charts Display
+│             │  └─ Session Storage
 └──────┬──────┘
        │
        ▼
 ┌─────────────┐
-│ Coordinator │  Express.js + TypeScript
+│  Backend    │  Express.js + TypeScript
 │ (Port 3002) │  └─ File Upload & Processing
-│             │  └─ Seal SDK (Encryption)
+│             │  └─ Multi-format Analyzers
 │             │  └─ Walrus SDK (Storage)
 │             │  └─ Sui SDK (On-chain)
-│             │  └─ OpenRouter LLM (Insights)
-│             │  └─ Chart Generator
-└──────┬──────┘
-       │
-       ├──────────────┬──────────────┐
-       ▼              ▼              ▼
-┌──────────┐   ┌──────────┐   ┌──────────┐
-│ Worker 1 │   │ Worker 2 │   │  ...     │
-│(Port 8001)│  │(Port 8002)│  │          │
-│          │   │          │   │          │
-│ Python   │   │ Python   │   │ Python   │
-│ FastAPI  │   │ FastAPI  │   │ FastAPI  │
-│          │   │          │   │          │
-│ └─ Data  │   │ └─ Data  │   │ └─ Data  │
-│    Analyzer│ │    Analyzer│ │    Analyzer│
-│ └─ Training│ │ └─ Training│ │ └─ Training│
-│ └─ Crypto │ │ └─ Crypto │ │ └─ Crypto │
-└──────────┘   └──────────┘   └──────────┘
+│             │  └─ OpenRouter LLM (Insights + Charts)
+│             │  └─ Chart Generator (LLM-based, no hardcoded logic)
+└─────────────┘
 ```
 
 ### Technology Stack
@@ -64,97 +51,82 @@ FlowData Studio is a **decentralized federated learning platform** that:
 - **Sui Wallet** - Session key generation
 - **SSE** - Real-time progress updates
 
-**Backend Coordinator** (Express.js + TypeScript):
+**Backend** (Express.js + TypeScript):
 - **Express.js** - REST API server
-- **Seal SDK** (`@mysten/seal`) - Privacy-preserving encryption
-- **Walrus SDK** (`@mysten/walrus`) - Decentralized blob storage
+- **Multer** - File upload handling
+- **Walrus SDK** (`@mysten/walrus`) - Decentralized blob storage (up to ~14 GB)
 - **Sui SDK** (`@mysten/sui`) - On-chain provenance
 - **OpenRouter** - LLM API for AI insights
-- **Chart Generator** - Aggregate and generate charts from actual data
-
-**Workers** (Python FastAPI):
-- **FastAPI** - REST API for workers
-- **Data Analyzer** - CSV analysis (statistics, correlations, clusters, trends)
-- **Training Engine** - Federated learning with replay proof
-- **Cryptography** - Ed25519 signatures, hardware info, attestation
-- **psutil** - Hardware information
+- **Multi-format Analyzers**:
+  - CSV Analyzer (statistics, correlations, trends, clusters)
+  - JSON Analyzer (handles any JSON structure)
+  - Image Analyzer (metadata extraction)
+  - PDF Analyzer (text extraction)
+  - Word Analyzer (text extraction)
+  - Text Analyzer (plain text)
 
 **Blockchain & Storage**:
-- **Sui** - On-chain provenance and transaction simulation
-- **Walrus** - Decentralized blob storage for audit logs
-- **Seal** - Privacy-preserving encryption with key servers
+- **Sui** - On-chain provenance and transaction recording
+- **Walrus** - Decentralized blob storage for files (binary storage)
 
 ## 🔄 Complete Data Flow
 
-### 1. User Upload & Processing
+### 1. File Upload
 
 ```
-User Upload CSV
+User Upload File (any format)
     ↓
-Coordinator:
+Backend:
   - Validates file
-  - Splits into shards
-  - Generates commit hash (SHA256)
-  - Encrypts shards with Seal SDK
-    ↓
-Workers:
-  - Receive encrypted shards
-  - Decrypt via /api/decrypt endpoint
-  - Verify commit hash (zero-knowledge)
+  - Detects file type (CSV, JSON, image, PDF, Word, text)
+  - Uploads file to Walrus (binary blob, ONCE)
 ```
 
-### 2. Data Analysis & Training
+### 2. Data Analysis
 
 ```
-Workers:
-  - Analyze CSV data:
-    * Statistics (mean, median, std, min, max)
-    * Correlations (Pearson correlation)
-    * Clusters (k-means-like clustering)
-    * Trends (time series analysis)
-    * Outliers (2+ std deviations)
-  - Train federated model:
-    * Loss history
-    * Replay proof (per-epoch hashes)
-    * Cryptographic attestation
-    ↓
-Coordinator:
-  - Receives data insights + training results
-  - Aggregates insights from all workers
-  - Generates charts from actual data
+Backend:
+  - Analyzes file based on type:
+    * CSV: Statistics, correlations, trends, clusters, outliers
+    * JSON: Flattens nested structures, extracts all keys
+    * Images: Extracts metadata (width, height, format)
+    * PDF/Word: Extracts text, counts words/chars/lines
+  - Generates charts dynamically from actual data
 ```
 
-### 3. AI Insight Generation
+### 3. AI Insight & Chart Generation
 
 ```
-Coordinator:
-  - Sends aggregated data to OpenRouter LLM:
-    * Actual data statistics
+Backend:
+  - Sends analysis results to OpenRouter LLM:
+    * Data statistics
     * Correlations found
     * Trends detected
-    * Clusters identified
-    * Training metrics
-  - LLM generates:
+    * Structure detected
+  - LLM intelligently generates:
     * Natural language story
     * Key findings
     * Recommendations
-    * Chart explanations
+    * Chart specifications (JSON format):
+      - Trends (if time-series data)
+      - Bar charts (if key-value or categorical)
+      - Scatter plots (if 2+ numeric columns)
+      - Pie charts (if distribution data)
+      - Line charts (if sequential data)
+      - Correlations (if numeric correlations)
+  - Backend parses LLM chart specs and converts to frontend format
 ```
 
 ### 4. On-Chain Provenance
 
 ```
-Coordinator:
-  - Stores to Walrus:
-    * Full audit log trace
-    * Data insights
-    * Training results
-    * AI-generated insights
+Backend:
+  - Stores file to Walrus (binary blob, ~14 GB max)
   - Records on Sui:
-    * Walrus CID
-    * Blob Object ID
+    * Walrus blob ID
+    * File hash
+    * Analysis metadata
     * Transaction hash
-    * Participant nodes
 ```
 
 ### 5. Frontend Display
@@ -163,15 +135,16 @@ Coordinator:
 Frontend:
   - Real-time progress (SSE)
   - AI-generated story
-  - Charts from actual data:
-    * Correlation matrix
-    * Trend analysis
-    * Cluster visualization
+  - Dynamic charts from actual data:
+    * Correlation matrix (if applicable)
+    * Trend analysis (if time-series)
+    * Cluster visualization (if applicable)
+    * Key-value bar chart (if key-value structure)
   - Summary statistics
   - On-chain proof links:
     * Walrus Scan URL
     * Sui Explorer link
-  - Shareable InsightCard
+  - Regenerate insights with new prompts
 ```
 
 ## 🚀 Quick Start
@@ -179,7 +152,6 @@ Frontend:
 ### Prerequisites
 
 - **Node.js** 18+ (for backend and frontend)
-- **Python** 3.10+ (for workers)
 - **npm** or **yarn** (package manager)
 - **Git** (for cloning)
 
@@ -190,12 +162,8 @@ Frontend:
 git clone https://github.com/Modolo-oss/FlowData.git
 cd FlowData
 
-# Install backend and frontend dependencies
+# Install dependencies
 npm run install:all
-
-# Install Python dependencies for workers
-pip install -r worker_nodes/worker_1/requirements.txt
-pip install -r worker_nodes/worker_2/requirements.txt
 ```
 
 ### Environment Variables
@@ -203,28 +171,20 @@ pip install -r worker_nodes/worker_2/requirements.txt
 Create `.env` file in project root:
 
 ```env
-# Coordinator (Backend)
+# Backend
 COORDINATOR_PORT=3002
-WORKER_NODES=http://localhost:8001,http://localhost:8002
 MAX_UPLOAD_MB=200
 
 # Sui Network
 SUI_NETWORK=testnet
 SUI_RPC_URL=https://sui-testnet-rpc.publicnode.com
 
-# Seal Policy Package (pre-deployed)
-SEAL_POLICY_PACKAGE_ID=0x1c2dd5cfaecda72a2d1fbeb48032be68667d760a4f56fa93848a004701d700f8
-
 # Walrus Signer (optional - for production)
 WALRUS_SIGNER_PRIVATE_KEY=
 
-# Worker Private Keys (optional - for production)
-WORKER1_PRIVATE_KEY=
-WORKER2_PRIVATE_KEY=
-
 # OpenRouter LLM (for AI insights)
 OPENROUTER_API_KEY=your_openrouter_api_key
-OPENROUTER_MODEL=openai/gpt-4o-mini,google/gemma-3-27b-it:free,z-ai/glm-4.5-air:free
+OPENROUTER_MODEL=openai/gpt-4o-mini,google/gemma-3-27b-it:free,nvidia/nemotron-nano-12b-v2-vl:free
 ```
 
 Create `frontend/.env.local`:
@@ -235,29 +195,12 @@ NEXT_PUBLIC_API_URL=http://localhost:3002
 
 ### Running Locally
 
-**Option 1: PowerShell Script (Windows)**
-
-```powershell
-# Start all services
-.\scripts\start-local.ps1
-```
-
-**Option 2: Manual Start**
-
 ```bash
-# Terminal 1: Coordinator
+# Terminal 1: Backend
 cd backend
-npm run dev:coordinator
+npm run dev
 
-# Terminal 2: Worker 1
-cd worker_nodes/worker_1
-python -m uvicorn api:app --port 8001
-
-# Terminal 3: Worker 2
-cd worker_nodes/worker_2
-python -m uvicorn api:app --port 8002
-
-# Terminal 4: Frontend
+# Terminal 2: Frontend
 cd frontend
 npm run dev
 ```
@@ -265,54 +208,89 @@ npm run dev
 ### Access the Application
 
 - **Frontend**: http://localhost:3000
-- **Coordinator API**: http://localhost:3002
-- **Worker 1**: http://localhost:8001
-- **Worker 2**: http://localhost:8002
+- **Backend API**: http://localhost:3002
 
 **API Endpoints**:
 - `GET /api/health` - Health check
-- `GET /api/monitor/nodes` - Monitor worker nodes
 - `GET /api/progress` - SSE progress stream
-- `GET /api/walrus/:blobId` - Retrieve data from Walrus
-- `POST /api/upload` - Upload CSV file
+- `POST /api/upload` - Upload file (any format)
+- `POST /api/regenerate-insights` - Regenerate AI insights with new prompt
 
-## 📊 Features
+## 📊 Supported File Types
 
-### 🔍 Real Data Analysis
+### CSV (Comma-Separated Values)
+- Extracts columns (numeric & categorical)
+- Calculates statistics (mean, min, max, median, std)
+- Finds correlations between columns
+- Detects trends (time-series analysis)
+- Identifies clusters and outliers
 
-- **Statistics**: Mean, median, std, min, max for numeric columns
-- **Correlations**: Pearson correlation matrix between numeric columns
-- **Clusters**: K-means-like clustering visualization
-- **Trends**: Time series analysis with direction detection
-- **Outliers**: Automatic outlier detection (2+ std deviations)
+### JSON
+- Handles any JSON structure (arrays, objects, nested)
+- Flattens nested objects recursively
+- Extracts all keys as columns
+- Converts array of objects to table format
+
+### Images
+- Extracts metadata (width, height, format, size)
+- Generates basic insights
+
+### PDF
+- Extracts text content
+- Counts words, characters, lines
+- Generates text-based insights
+
+### Word Documents
+- Extracts text from .doc and .docx files
+- Counts words, characters, lines
+- Generates text-based insights
+
+### Plain Text
+- Analyzes text content
+- Counts words, characters, lines
+- Detects if it's CSV or JSON and parses accordingly
+
+## 🤖 Features
+
+### 🔍 Flexible Data Analysis
+
+- **Any File Format**: CSV, JSON, images, PDF, Word, text
+- **Intelligent Parsing**: Automatically detects and adapts to data structure
+- **Dynamic Charts**: Generates relevant visualizations based on actual data
+- **No Format Requirements**: User can upload anything, system adapts
 
 ### 🤖 AI-Powered Insights
 
 - **Natural Language Stories**: LLM-generated narratives from your data
 - **Key Findings**: Bullet points of important insights
 - **Recommendations**: Actionable recommendations based on data
-- **Chart Explanations**: LLM explains what charts mean
+- **Regenerate Insights**: Generate new insights with different prompts without re-uploading
 
-### 📈 Beautiful Visualizations
+### 📈 AI-Generated Dynamic Visualizations
 
-- **Correlation Matrix**: Interactive correlation visualization
-- **Trend Forecast**: Time series with trend direction
-- **Cluster Visualization**: 2D scatter plot with clusters
-- **Summary Statistics**: Key metrics at a glance
+- **LLM-Powered Chart Generation**: No hardcoded logic - LLM decides what charts are relevant
+- **Intelligent Chart Detection**: LLM analyzes data structure and generates appropriate visualizations:
+  - Trend charts (if time-series data detected)
+  - Bar charts (if key-value or categorical data)
+  - Scatter plots (if 2+ numeric columns with relationships)
+  - Pie charts (if distribution data)
+  - Line charts (if sequential patterns)
+  - Correlation matrices (if numeric correlations exist)
+- **Adaptive**: Only generates and shows charts that make sense for your data
+- **No Hardcoded Logic**: Fully intelligent chart generation based on actual data structure
 
 ### 🔐 Privacy & Security
 
-- **Seal Encryption**: Data shards encrypted before distribution
-- **Zero-Knowledge Commit**: Data integrity verification
-- **Worker Attestation**: Ed25519 cryptographic signatures
-- **Full Encrypted Pipeline**: End-to-end encryption
+- **On-Chain Provenance**: All files recorded on Sui blockchain
+- **Walrus Storage**: Files stored on decentralized storage
+- **File Hash Verification**: SHA256 hash for integrity
 
 ### ⛓️ On-Chain Provenance
 
-- **Walrus Storage**: Complete audit logs stored on Walrus
+- **Walrus Storage**: Original files stored on Walrus (up to ~14 GB)
 - **Sui Blockchain**: Provenance links recorded on-chain
-- **Verifiable**: Hash chains and signatures for offline verification
-- **Shareable**: InsightCards with on-chain proof links
+- **Verifiable**: Hash chains for verification
+- **Shareable**: Insight cards with on-chain proof links
 
 ## 📁 Project Structure
 
@@ -320,16 +298,22 @@ npm run dev
 .
 ├── backend/                    # Express.js backend (TypeScript)
 │   ├── src/
-│   │   ├── coordinator/       # Coordinator server
+│   │   ├── coordinator/       # API server
 │   │   │   └── server.ts      # Main API server
 │   │   ├── proofs/            # Blockchain integrations
-│   │   │   ├── seal.ts        # Seal SDK (encryption)
 │   │   │   ├── walrus.ts      # Walrus SDK (storage)
 │   │   │   └── sui.ts         # Sui SDK (on-chain)
 │   │   ├── services/          # External services
-│   │   │   └── llm.ts         # OpenRouter LLM integration
+│   │   │   └── llm-new.ts     # OpenRouter LLM integration
 │   │   ├── utils/             # Utilities
-│   │   │   └── chartGenerator.ts  # Chart generation from data
+│   │   │   ├── fileAnalyzer.ts    # Universal file analyzer
+│   │   │   ├── fileTypeDetector.ts # File type detection
+│   │   │   ├── csvAnalyzer.ts     # CSV analysis
+│   │   │   ├── jsonAnalyzer.ts    # JSON analysis
+│   │   │   ├── imageAnalyzer.ts   # Image analysis
+│   │   │   ├── pdfAnalyzer.ts     # PDF analysis
+│   │   │   ├── wordAnalyzer.ts    # Word analysis
+│   │   │   └── chartGenerator.ts  # Chart generation
 │   │   ├── config.ts          # Configuration
 │   │   └── types.ts           # TypeScript types
 │   └── package.json
@@ -338,14 +322,13 @@ npm run dev
 │   ├── app/                    # Next.js app directory
 │   │   ├── page.tsx           # Home page
 │   │   ├── upload/            # Upload page
-│   │   ├── progress/           # Progress page
-│   │   ├── analysis/          # Analysis results page
-│   │   └── nodes/             # Worker nodes monitor
+│   │   ├── progress/          # Progress page
+│   │   └── analysis/          # Analysis results page
 │   ├── components/             # React components
 │   │   ├── ai-story.tsx       # AI story component
 │   │   ├── charts-grid.tsx    # Charts visualization
 │   │   ├── insight-card.tsx    # Shareable insight card
-│   │   └── ui/                # shadcn/ui components
+│   │   └── prompt-input.tsx    # Prompt input for regenerate
 │   ├── hooks/                 # React hooks
 │   │   ├── use-progress.ts    # SSE progress hook
 │   │   └── use-sui-wallet.ts  # Sui wallet hook
@@ -354,32 +337,9 @@ npm run dev
 │   │   └── sessionKey.ts      # Session key generation
 │   └── package.json
 │
-├── worker_nodes/              # Python FastAPI workers
-│   ├── worker_1/             # Worker node 1
-│   │   ├── api.py            # FastAPI endpoints
-│   │   ├── main.py           # Server entry point
-│   │   └── requirements.txt
-│   ├── worker_2/             # Worker node 2
-│   │   ├── api.py
-│   │   ├── main.py
-│   │   └── requirements.txt
-│   └── common/               # Shared utilities
-│       ├── data_analyzer.py  # CSV data analysis
-│       ├── training_engine.py # Federated learning
-│       └── crypto.py         # Cryptography & attestation
-│
-├── flowdata-policy/          # Seal Policy Package (Move)
-│   ├── sources/
-│   │   └── policy.move       # Policy contract
-│   └── Move.toml
-│
-├── scripts/                  # PowerShell scripts
-│   ├── start-local.ps1      # Start all services
-│   ├── start-workers.ps1    # Start workers only
-│   └── monitor-nodes.ps1    # Monitor nodes
-│
-├── docs/                    # Documentation
-│   └── LLM_ARCHITECTURE.md  # LLM integration docs
+├── docs/                      # Documentation
+│   ├── REGENERATE_INSIGHTS_API.md
+│   └── SUPPORTED_FILE_TYPES.md
 │
 └── README.md
 ```
@@ -389,21 +349,16 @@ npm run dev
 ### Ports
 
 - **Frontend**: `3000` (Next.js default)
-- **Coordinator**: `3002` (configurable via `COORDINATOR_PORT`)
-- **Worker 1**: `8001` (configurable via `WORKER1_PORT`)
-- **Worker 2**: `8002` (configurable via `WORKER2_PORT`)
+- **Backend**: `3002` (configurable via `COORDINATOR_PORT`)
 
 ### Environment Variables
 
 **Backend (`.env` in root)**:
-- `COORDINATOR_PORT` - Coordinator port (default: 3002)
-- `WORKER_NODES` - Comma-separated worker URLs
+- `COORDINATOR_PORT` - Backend port (default: 3002)
+- `MAX_UPLOAD_MB` - Maximum upload size in MB (default: 200)
 - `SUI_NETWORK` - Sui network (testnet/mainnet/devnet)
 - `SUI_RPC_URL` - Custom Sui RPC endpoint
-- `SEAL_POLICY_PACKAGE_ID` - Seal policy package ID
-- `WALRUS_SIGNER_PRIVATE_KEY` - Walrus signer key (optional)
-- `WORKER1_PRIVATE_KEY` - Worker 1 key (optional)
-- `WORKER2_PRIVATE_KEY` - Worker 2 key (optional)
+- `WALRUS_SIGNER_PRIVATE_KEY` - Walrus signer key (optional, for production)
 - `OPENROUTER_API_KEY` - OpenRouter API key (required for AI insights)
 - `OPENROUTER_MODEL` - Comma-separated list of LLM models (with fallback)
 
@@ -412,131 +367,86 @@ npm run dev
 
 ## 🎨 User Experience
 
-### 1. Upload Data
+### 1. Upload File
 
-- Drag & drop CSV file or click to upload
+- Drag & drop file or click to upload
+- Supports: CSV, JSON, images, PDF, Word, text
 - Optional: Connect Sui Wallet for session key generation
 - Optional: Add custom prompt for personalized analysis
 
 ### 2. Real-Time Progress
 
 - Watch progress in real-time via SSE
-- See data analysis stages:
+- See analysis stages:
   - Validating file
-  - Splitting data
-  - Encrypting shards
-  - Dispatching to workers
-  - Training & analyzing
-  - Aggregating insights
-  - Generating AI insights
-  - Storing to Walrus
-  - Recording on-chain
+  - Detecting file type
+  - Analyzing data
+  - Generating AI insights and charts (LLM-powered)
+  - Uploading to Walrus
+  - Recording on Sui
 
 ### 3. View Insights
 
 - **AI Data Story**: Natural language narrative from your data
 - **Key Findings**: Important insights as bullet points
 - **Recommendations**: Actionable recommendations
-- **Charts**: 
-  - Correlation matrix (from actual data)
-  - Trend analysis (from time series)
-  - Cluster visualization (from data points)
-- **Summary Statistics**: Total samples, numeric columns, correlations, outliers
+- **AI-Generated Charts**: 
+  - LLM intelligently decides which charts to generate
+  - Charts generated based on actual data structure (not hardcoded)
+  - Only relevant visualizations are shown
+- **Summary Statistics**: Total samples, columns, correlations, outliers
 
-### 4. Share Results
+### 4. Regenerate Insights
 
-- **InsightCard**: Shareable card with story + charts + on-chain proof
-- **Walrus Scan**: View complete audit log on Walrus
+- Enter new prompt without re-uploading file
+- Analysis results stored in sessionStorage
+- Generate new AI insights based on same data
+- View updated insights and charts
+
+### 5. Share Results
+
+- **Insight Card**: Shareable card with story + charts + on-chain proof
+- **Walrus Scan**: View file on Walrus
 - **Sui Explorer**: View on-chain transaction
-
-## 🔐 Security Features
-
-### Full Encrypted Pipeline
-
-1. **Encrypted Shard**: Coordinator encrypts data with Seal SDK
-2. **Decrypted Training**: Workers decrypt themselves via `/api/decrypt`
-3. **Encrypted Update**: Workers encrypt updates before sending
-4. **On-chain Verified**: Complete audit log stored on Walrus
-
-### Cryptographic Attestation
-
-- **Ed25519 Signatures**: Each worker signs updates cryptographically
-- **Hardware Info**: CPU cores, RAM, platform included in attestation
-- **Sui Address**: Derived from worker's Ed25519 public key
-- **Verification**: Backend verifies signatures cryptographically
-
-### Zero-Knowledge Commit
-
-- Coordinator generates `commitHash = SHA256(shardPlaintext)` before encryption
-- Worker verifies commit hash after decryption
-- Proves data integrity without revealing content
-
-### Replay Proof
-
-- Per-epoch loss hashes
-- Per-epoch gradient norm hashes
-- Random challenge seed
-- Offline verifiable hash chain
 
 ## 📚 API Documentation
 
-### Coordinator Endpoints
+### Endpoints
 
-**Health & Monitoring**:
-- `GET /api/health` - Basic health check
-- `GET /api/health/full` - Full health with worker details
-- `GET /api/monitor/nodes` - Monitor worker nodes (hardware & signature status)
+**File Upload**:
+- `POST /api/upload` - Upload file (any format)
+  - Form data: `file`, `prompt` (optional), `userAddress` (optional)
+  - Response: `AnalysisResult` with insights, charts, blobId, suiTx
 
-**Data Processing**:
-- `POST /api/upload` - Upload CSV file
-  - Form data: `file`, `prompt` (optional), `sessionKey` (optional), `userAddress` (optional)
-  - Response: `AggregationResult` with insights, charts, proof
+**Progress**:
 - `GET /api/progress` - SSE progress stream (real-time updates)
-- `GET /api/walrus/:blobId` - Retrieve data from Walrus
 
-**Internal**:
-- `POST /api/decrypt` - Decrypt endpoint for workers (internal use)
+**Regenerate Insights**:
+- `POST /api/regenerate-insights` - Regenerate AI insights with new prompt
+  - Body: `blobId`, `prompt`, `sessionKey` (optional)
+  - Response: Updated `llmInsights` and `chartData`
 
-### Worker Endpoints
-
-- `GET /health` - Health check with hardware info & signature status
-- `POST /train` - Train on data shard
-  - Body: `TrainShardRequest` (with optional `encryptedData`, `sessionKey`, `txBytes`, `commitHash`)
-  - Response: `TrainUpdate` with `dataInsights`, `attestation`, `replayProof`, `auditTrace`
+**Health**:
+- `GET /api/health` - Health check
 
 ## 🧪 Testing
 
 ### Test with Sample Data
 
-1. Start all services
+1. Start backend and frontend
 2. Open http://localhost:3000
-3. Upload a CSV file (e.g., `test-sample.csv`)
+3. Upload a file (CSV, JSON, image, PDF, Word, or text)
 4. Watch real-time progress
 5. View AI-generated insights and charts
-
-### Sample CSV Format
-
-```csv
-category,route,successful_txs,failed_txs,success_rate,avg_confirmation_time_sec,avg_cost_sol,time,total_transactions,successful,failed,cost_type,amount_sol
-Route Performance,RPC A,2847,123,95.86%,1.2,0.0012,,,,,,
-Route Performance,Jito,3521,45,98.74%,0.8,0.0045,,,,,,
-Time Series,,,,96.00%,,,00:00,450,432,18,,
-Time Series,,,,96.05%,,,04:00,380,365,15,,
-```
+6. Try regenerating insights with a new prompt
 
 ## 🐛 Troubleshooting
 
-### Workers Not Responding
-
-- Check if workers are running on ports 8001 and 8002
-- Verify `WORKER_NODES` environment variable
-- Check worker health: http://localhost:8001/health
-
 ### No Data Insights
 
-- Ensure CSV has numeric columns
-- Check for empty cells (data analyzer handles them)
-- Verify workers are analyzing data correctly
+- Ensure file has data
+- Check file format is supported
+- Verify file is not empty
 
 ### LLM Not Working
 
@@ -558,11 +468,10 @@ Built for the **Walrus Hackathon**. See individual package licenses for details.
 
 This is a production-ready hackathon MVP. For production deployment:
 
-1. Set persistent keypairs via environment variables
+1. Set persistent keypair via `WALRUS_SIGNER_PRIVATE_KEY`
 2. Configure production Sui network (mainnet)
-3. Deploy policy package with custom access control
-4. Set up monitoring and alerting
-5. Perform security audit
+3. Set up monitoring and alerting
+4. Perform security audit
 
 ## 🔗 Links
 

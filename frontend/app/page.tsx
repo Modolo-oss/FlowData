@@ -5,7 +5,7 @@ import Link from 'next/link'
 import Navigation from '@/components/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import { Upload, BarChart3, Cpu, Zap, ArrowRight } from 'lucide-react'
+import { Upload, BarChart3, Zap, ArrowRight } from 'lucide-react'
 
 export default function Home() {
   const [isAuthenticated] = useState(true)
@@ -22,10 +22,10 @@ export default function Home() {
               FlowData Studio
             </h1>
             <p className="text-xl text-muted-foreground">
-              Federated Learning Platform
+              AI-Powered Data Analysis Platform
             </p>
             <p className="text-muted-foreground max-w-2xl mx-auto">
-              Transform your data into AI-powered insights with privacy-preserving federated learning. 
+              Transform your data into AI-powered insights with privacy-preserving analysis. 
               Upload your dataset, get natural language stories, interactive visualizations, and on-chain verified results.
             </p>
           </div>
@@ -48,12 +48,6 @@ export default function Home() {
               <Button variant="outline" size="lg" className="min-w-[200px]">
                 <BarChart3 className="w-5 h-5 mr-2" />
                 Progress
-              </Button>
-            </Link>
-            <Link href="/nodes">
-              <Button variant="outline" size="lg" className="min-w-[200px]">
-                <Cpu className="w-5 h-5 mr-2" />
-                Network
               </Button>
             </Link>
           </div>
@@ -102,8 +96,8 @@ export default function Home() {
                       <BarChart3 className="w-6 h-6 text-primary" />
                     </div>
                     <div className="flex-1">
-                      <h3 className="font-semibold text-lg text-foreground">Training Progress</h3>
-                      <p className="text-sm text-muted-foreground">Monitor federated learning</p>
+                      <h3 className="font-semibold text-lg text-foreground">Analysis Progress</h3>
+                      <p className="text-sm text-muted-foreground">Monitor your data analysis</p>
                     </div>
                     <ArrowRight className="w-5 h-5 text-muted-foreground" />
                   </div>
@@ -111,16 +105,16 @@ export default function Home() {
               </Card>
             </Link>
 
-            <Link href="/nodes">
+            <Link href="/analysis">
               <Card className="bg-card border-border hover:border-primary/50 transition cursor-pointer h-full">
                 <CardContent className="p-6 space-y-4">
                   <div className="flex items-center gap-3">
                     <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center">
-                      <Cpu className="w-6 h-6 text-primary" />
+                      <BarChart3 className="w-6 h-6 text-primary" />
                     </div>
                     <div className="flex-1">
-                      <h3 className="font-semibold text-lg text-foreground">Network Nodes</h3>
-                      <p className="text-sm text-muted-foreground">Monitor worker nodes</p>
+                      <h3 className="font-semibold text-lg text-foreground">Analysis Results</h3>
+                      <p className="text-sm text-muted-foreground">View your data insights</p>
                     </div>
                     <ArrowRight className="w-5 h-5 text-muted-foreground" />
                   </div>

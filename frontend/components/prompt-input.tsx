@@ -10,7 +10,7 @@ export default function PromptInput({
   initialValue = '',
   disabled = false 
 }: { 
-  onSubmit: (text: string) => void
+  onSubmit: (text: string) => void | Promise<void>
   initialValue?: string
   disabled?: boolean
 }) {
@@ -18,12 +18,17 @@ export default function PromptInput({
   const [loading, setLoading] = useState(false)
 
   const handleSubmit = async () => {
-    if (!input.trim() || disabled) return
+    if (!input.trim() || disabled || loading) return
     setLoading(true)
     
-    // Call onSubmit immediately (no simulation)
-    onSubmit(input)
-    setLoading(false)
+    try {
+      // Call onSubmit (can be async)
+      await onSubmit(input)
+    } catch (error) {
+      console.error('Prompt submit error:', error)
+    } finally {
+      setLoading(false)
+    }
   }
 
   const suggestions = [
@@ -53,6 +58,7 @@ export default function PromptInput({
             onKeyPress={(e) => e.key === 'Enter' && handleSubmit()}
             className="flex-1 px-4 py-3 bg-background border border-border rounded-lg text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
             disabled={loading || disabled}
+            readOnly={loading || disabled}
           />
           <Button 
             className="bg-primary hover:bg-primary/90" 

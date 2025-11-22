@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
-import { Zap, BarChart3, Upload, Cpu } from 'lucide-react'
+import { Zap, BarChart3, Upload } from 'lucide-react'
 
 interface NavigationProps {
   isAuthenticated: boolean
@@ -34,10 +34,6 @@ export default function Navigation({ isAuthenticated, onAuthChange }: Navigation
               <Link href="/progress" className="flex items-center gap-2 text-sm text-muted-foreground hover:text-primary transition">
                 <BarChart3 className="w-4 h-4" />
                 Progress
-              </Link>
-              <Link href="/nodes" className="flex items-center gap-2 text-sm text-muted-foreground hover:text-primary transition">
-                <Cpu className="w-4 h-4" />
-                Network
               </Link>
             </>
           )}

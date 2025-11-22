@@ -10,10 +10,6 @@ const DEPLOYED_RPC = "https://sui-testnet-rpc.publicnode.com";
 
 export const config = {
 	coordinatorPort: Number(process.env.COORDINATOR_PORT || 3002),
-	workerNodes: (process.env.WORKER_NODES || "http://localhost:8001,http://localhost:8002")
-		.split(",")
-		.map(s => s.trim())
-		.filter(Boolean),
 	maxUploadMb: Number(process.env.MAX_UPLOAD_MB || 200),
 	suiNetwork: process.env.SUI_NETWORK || "testnet", // Used by Walrus and Sui SDKs
 	// Custom RPC URL (optional - defaults to PublicNode RPC or getFullnodeUrl if network differs)

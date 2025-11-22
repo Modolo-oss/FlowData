@@ -1,8 +1,8 @@
 import type { Metadata } from 'next'
 
 export const metadata: Metadata = {
-  title: 'Training Progress - FlowData Studio',
-  description: 'Monitor your federated learning training progress',
+  title: 'Analysis Progress - FlowData Studio',
+  description: 'Monitor your data analysis progress',
 }
 
 export default function ProgressLayout({

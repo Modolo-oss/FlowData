@@ -30,17 +30,23 @@ export default function ProgressPage() {
   // Auto-redirect to analysis when complete
   useEffect(() => {
     if (progress.complete && progress.result) {
-      toast.success('Training complete! Redirecting to results...')
+      toast.success('Analysis complete! Redirecting to results...')
       // Store result data in sessionStorage for analysis page
-      // This includes AI-generated insight from OpenRouter
-      sessionStorage.setItem('trainingResult', JSON.stringify(progress.result))
-      console.log('[PROGRESS] Stored result with AI insight:', {
-        hasInsight: !!progress.result.insight,
-        hasTitle: !!progress.result.insight?.title,
-        hasSummary: !!progress.result.insight?.summary,
-        hasKeyFindings: !!progress.result.insight?.keyFindings,
-        keyFindingsCount: progress.result.insight?.keyFindings?.length || 0,
+      // This includes AI-generated insight from OpenRouter (with user prompt)
+      // New structure: { blobId, suiTx, analysisSummary, llmInsights, chartData, ... }
+      console.log('[PROGRESS] Received complete result:', {
+        hasBlobId: !!progress.result.blobId,
+        hasSuiTx: !!progress.result.suiTx,
+        hasAnalysisSummary: !!progress.result.analysisSummary,
+        hasDataInsights: !!progress.result.analysisSummary?.dataInsights,
+        num_samples: progress.result.analysisSummary?.dataInsights?.num_samples,
+        columns: progress.result.analysisSummary?.dataInsights?.columns?.length,
+        hasLlmInsights: !!progress.result.llmInsights,
+        hasChartData: !!progress.result.chartData,
+        fullResult: progress.result, // Log full result for debugging
       })
+      sessionStorage.setItem('trainingResult', JSON.stringify(progress.result))
+      console.log('[PROGRESS] ✅ Stored result to sessionStorage')
       setTimeout(() => {
         router.push('/analysis')
       }, 2000)
@@ -65,17 +71,17 @@ export default function ProgressPage() {
         <div className="space-y-8">
           <div className="space-y-3">
             <h1 className="text-4xl font-bold text-foreground text-balance">
-              Training in Progress
+              Analysis in Progress
             </h1>
             <p className="text-lg text-muted-foreground">
-              Your dataset is being analyzed across the federated learning network. Insights will be generated once training completes.
+              Your dataset is being analyzed. AI insights and visualizations will be generated once analysis completes.
             </p>
           </div>
 
           {/* Overall Progress */}
           <Card className="bg-card border-border">
             <CardHeader>
-              <CardTitle>Training Status</CardTitle>
+              <CardTitle>Analysis Status</CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
               {/* Progress Bar */}
@@ -107,24 +113,24 @@ export default function ProgressPage() {
               )}
 
               {/* Stats Grid */}
-              {progress.result && (
+              {progress.result && progress.result.analysisSummary && (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {progress.result.avgFinalLoss !== undefined && (
+                  {progress.result.analysisSummary.dataInsights?.num_samples !== undefined && (
                     <div className="p-3 bg-input rounded-lg">
-                      <p className="text-xs text-muted-foreground mb-1">Average Loss</p>
-                      <p className="text-2xl font-bold text-foreground">{progress.result.avgFinalLoss.toFixed(3)}</p>
+                      <p className="text-xs text-muted-foreground mb-1">Samples</p>
+                      <p className="text-2xl font-bold text-foreground">{progress.result.analysisSummary.dataInsights.num_samples}</p>
                     </div>
                   )}
-                  {progress.result.numWorkers !== undefined && (
+                  {progress.result.analysisSummary.dataInsights?.columns?.length !== undefined && (
                     <div className="p-3 bg-input rounded-lg">
-                      <p className="text-xs text-muted-foreground mb-1">Workers</p>
-                      <p className="text-2xl font-bold text-accent">{progress.result.numWorkers}</p>
+                      <p className="text-xs text-muted-foreground mb-1">Columns</p>
+                      <p className="text-2xl font-bold text-accent">{progress.result.analysisSummary.dataInsights.columns.length}</p>
                     </div>
                   )}
-                  {progress.result.aggregatedHash && (
+                  {progress.result.blobId && (
                     <div className="p-3 bg-input rounded-lg">
-                      <p className="text-xs text-muted-foreground mb-1">Model Hash</p>
-                      <p className="text-xs font-mono text-foreground truncate">{progress.result.aggregatedHash.slice(0, 16)}...</p>
+                      <p className="text-xs text-muted-foreground mb-1">Blob ID</p>
+                      <p className="text-xs font-mono text-foreground truncate">{progress.result.blobId.slice(0, 16)}...</p>
                     </div>
                   )}
                 </div>
@@ -132,47 +138,6 @@ export default function ProgressPage() {
             </CardContent>
           </Card>
 
-          {/* Worker Status */}
-          {progress.workers && progress.workers.length > 0 && (
-            <Card className="bg-card border-border">
-              <CardHeader>
-                <CardTitle>Worker Status</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {progress.workers.map((worker: any, idx: number) => (
-                    <div 
-                      key={idx}
-                      className="p-4 border border-border rounded-lg hover:bg-input/50 transition"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex-1">
-                          <h3 className="font-semibold text-foreground">{worker.nodeId || `Worker ${idx + 1}`}</h3>
-                          {worker.suiAddress && (
-                            <p className="text-xs text-muted-foreground font-mono mt-1">
-                              {worker.suiAddress.slice(0, 10)}...{worker.suiAddress.slice(-8)}
-                            </p>
-                          )}
-                        </div>
-                        <div className="text-right">
-                          {worker.lossHistory && worker.lossHistory.length > 0 && (
-                            <p className="text-sm font-mono text-foreground">
-                              Loss: {worker.lossHistory[worker.lossHistory.length - 1].toFixed(3)}
-                            </p>
-                          )}
-                          {worker.numSamples !== undefined && (
-                            <p className="text-xs text-muted-foreground mt-1">
-                              {worker.numSamples} samples
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
 
           {/* Complete Status */}
           {progress.complete && (
@@ -180,9 +145,9 @@ export default function ProgressPage() {
               <CardContent className="pt-6">
                 <div className="text-center space-y-4">
                   <div className="text-4xl">✅</div>
-                  <h3 className="text-xl font-bold text-foreground">Training Complete!</h3>
+                  <h3 className="text-xl font-bold text-foreground">Analysis Complete!</h3>
                   <p className="text-muted-foreground">
-                    Your federated learning model has been trained successfully. Redirecting to results...
+                    Your dataset has been analyzed successfully. Redirecting to results...
                   </p>
                 </div>
               </CardContent>

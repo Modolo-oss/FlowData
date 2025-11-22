@@ -9,7 +9,6 @@ export interface ProgressState {
   stage: string;
   progress: number;
   message?: string;
-  workers?: any[];
   complete?: boolean;
   error?: string;
   result?: any;
@@ -33,7 +32,6 @@ export function useProgress(enabled: boolean = true) {
             stage: event.data.stage || prev.stage,
             progress: event.data.progress !== undefined ? event.data.progress : prev.progress, // Use backend progress percentage
             message: event.data.message || prev.message,
-            workers: event.data.workers || prev.workers,
             error: undefined, // Clear error on successful status
           }));
         } else if (event.event === 'progress') {
@@ -42,14 +40,24 @@ export function useProgress(enabled: boolean = true) {
             stage: event.data.stage || prev.stage,
             progress: event.data.progress !== undefined ? event.data.progress : prev.progress, // Use backend progress percentage
             message: event.data.message || prev.message,
-            workers: event.data.workers || prev.workers,
             error: undefined, // Clear error on progress
           }));
         } else if (event.event === 'complete' || event.event === 'done') {
+          // Backend broadcasts: { result: {...} }
+          // So event.data is { result: {...} }, not the result directly
+          const result = event.data.result || event.data;
+          console.log('[PROGRESS] Received complete event:', {
+            hasResult: !!result,
+            hasAnalysisSummary: !!result?.analysisSummary,
+            hasDataInsights: !!result?.analysisSummary?.dataInsights,
+            num_samples: result?.analysisSummary?.dataInsights?.num_samples,
+            columns: result?.analysisSummary?.dataInsights?.columns?.length,
+            eventData: event.data, // Log full event data for debugging
+          });
           setState((prev) => ({
             ...prev,
             complete: true,
-            result: event.data,
+            result: result, // Use result from event.data.result
             progress: 100,
             stage: 'complete',
             error: undefined,

@@ -7,8 +7,8 @@ const _geist = Geist({ subsets: ["latin"] });
 const _geistMono = Geist_Mono({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: 'FlowData Studio - Federated Learning Platform',
-  description: 'Decentralized federated learning platform for collaborative machine learning',
+  title: 'FlowData Studio - AI-Powered Data Analysis',
+  description: 'Transform your data into AI-powered insights with privacy-preserving analysis and on-chain verification',
   icons: {
     icon: [
       {

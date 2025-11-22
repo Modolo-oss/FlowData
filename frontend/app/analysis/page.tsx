@@ -11,32 +11,95 @@ import ChartsGrid from '@/components/charts-grid'
 import InsightCard from '@/components/insight-card'
 import PromptInput from '@/components/prompt-input'
 import { toast } from 'sonner'
+import { regenerateInsights } from '@/lib/api'
 
+// New AnalysisResult structure matching backend
 interface AnalysisResult {
-  globalModelHash?: string
+  // Walrus storage
+  blobId?: string
+  walrusScanUrl?: string
+  
+  // Sui blockchain
+  suiTx?: string
+  suiExplorerUrl?: string
+  
+  // Analysis results
+  analysisSummary?: {
+    dataInsights: {
+      num_samples: number
+      columns: string[]
+      numeric_columns?: string[]
+      categorical_columns?: string[]
+      statistics?: Record<string, any>
+      correlations?: Array<{ x: string; y: string; value: number }>
+      clusters?: Array<{ x: number; y: number; cluster: string; label: string }>
+      trends?: Array<{
+        metric: string
+        over: string
+        direction: string
+        change: number
+        data_points: Array<{ date: string; value: number }>
+      }>
+      outliers?: Array<{ column: string; row: number; value: number; deviation: number }>
+    }
+    chartsData: {
+      correlationMatrix: Array<{ x: string; y: string; value: number }>
+      trends: Array<{ date: string; value: number }>
+      clusters: Array<{ x: number; y: number; cluster: string; label: string }>
+      outliers: Array<{ column: string; row: number; value: number; deviation: number }>
+      summary: {
+        total_samples: number
+        numeric_columns: number
+        categorical_columns: number
+        strong_correlations: number
+        outliers_count: number
+      }
+    }
+  }
+  
+  // AI insights (from LLM with user prompt)
+  llmInsights?: {
+    title: string
+    summary: string
+    keyFindings?: string[]
+    recommendations?: string[]
+    chartRecommendations?: string[]
+  }
+  
+  // File info
+  fileHash?: string
+  fileName?: string
+  fileType?: string
+  
+  // Chart data (for frontend rendering)
+  chartData?: {
+    correlationMatrix: Array<{ x: string; y: string; value: number }>
+    trends: Array<{ date: string; value: number }>
+    clusters: Array<{ x: number; y: number; cluster: string; label: string }>
+    outliers: Array<{ column: string; row: number; value: number; deviation: number }>
+    summary: {
+      total_samples: number
+      numeric_columns: number
+      categorical_columns: number
+      strong_correlations: number
+      outliers_count: number
+    }
+  }
+  
+  // Legacy support (for backward compatibility)
   insight?: {
     title?: string
     summary?: string
-    keyFindings?: string[]  // AI-generated key findings
-    recommendations?: string[]  // AI-generated recommendations
-    metrics?: {
-      numWorkers?: number
-      avgFinalLoss?: number
-    }
-    charts?: Array<{ type: string; cid: string }>
-    visualizationHints?: {
-      correlation?: string[]
-      trends?: string[]
-      clusters?: string[]
-    }
+    keyFindings?: string[]
+    recommendations?: string[]
+    chartData?: any
   }
   proof?: {
     walrusCid?: string
-    walrusScanUrl?: string  // Walrus Scan URL
-    blobObjectId?: string  // Blob Object ID
+    walrusScanUrl?: string
+    blobObjectId?: string
     suiTxHash?: string
   }
-  updates?: any[]
 }
 
 export default function AnalysisPage() {
@@ -44,6 +107,7 @@ export default function AnalysisPage() {
   const [customStory, setCustomStory] = useState('')
   const [result, setResult] = useState<AnalysisResult | null>(null)
   const [loading, setLoading] = useState(true)
+  const [regenerating, setRegenerating] = useState(false)
   const router = useRouter()
 
   // Load result from sessionStorage or show mock data
@@ -52,56 +116,65 @@ export default function AnalysisPage() {
     if (storedResult) {
       try {
         const parsed = JSON.parse(storedResult)
+        console.log('[ANALYSIS] Loaded result from sessionStorage:', {
+          hasBlobId: !!parsed.blobId,
+          hasSuiTx: !!parsed.suiTx,
+          hasAnalysisSummary: !!parsed.analysisSummary,
+          hasDataInsights: !!parsed.analysisSummary?.dataInsights,
+          num_samples: parsed.analysisSummary?.dataInsights?.num_samples,
+          columns: parsed.analysisSummary?.dataInsights?.columns?.length,
+          hasLlmInsights: !!parsed.llmInsights,
+          hasChartData: !!parsed.chartData,
+          fullResult: parsed, // Log full result for debugging
+        })
         setResult(parsed)
-        if (parsed.insight?.summary) {
+        // Priority: llmInsights.summary > insight.summary > customStory
+        if (parsed.llmInsights?.summary) {
+          setCustomStory(parsed.llmInsights.summary)
+        } else if (parsed.insight?.summary) {
           setCustomStory(parsed.insight.summary)
         }
       } catch (e) {
         console.error('Failed to parse stored result:', e)
       }
+    } else {
+      console.warn('[ANALYSIS] No result found in sessionStorage')
     }
     setLoading(false)
   }, [])
 
   // Generate AI story from result data (use backend AI-generated insight)
   const generateStory = (result: AnalysisResult): string => {
-    // Use AI-generated summary from backend (OpenRouter/LLM)
+    // Priority 1: Use new llmInsights.summary (from OpenRouter with user prompt)
+    if (result.llmInsights?.summary) {
+      return result.llmInsights.summary
+    }
+    
+    // Priority 2: Use legacy insight.summary (backward compatibility)
     if (result.insight?.summary) {
       return result.insight.summary
     }
     
-    // Fallback: Generate basic story from metrics if no AI summary
-    const numWorkers = result.insight?.metrics?.numWorkers || result.updates?.length || 2
-    const avgLoss = result.insight?.metrics?.avgFinalLoss || 0.5
-    const hasEncryption = result.updates?.some((u: any) => u.attestation?.commitVerified) || false
+    // Fallback: Generate basic story from analysis summary
+    const numSamples = result.analysisSummary?.dataInsights?.num_samples || 0
+    const numColumns = result.analysisSummary?.dataInsights?.columns?.length || 0
     
-    return `Your dataset has been analyzed across ${numWorkers} federated learning workers. ` +
-      `Average final loss: ${avgLoss.toFixed(3)}. ` +
-      `${hasEncryption ? 'Data was encrypted and verified on-chain.' : 'Analysis completed successfully.'} ` +
-      `Model aggregated successfully with cryptographic verification.`
+    return `Your dataset has been analyzed successfully. ` +
+      `Found ${numSamples} samples across ${numColumns} columns. ` +
+      `Analysis completed with AI-generated insights and visualizations.`
   }
 
-  // Use AI-generated story from backend (OpenRouter), or fallback to basic story
+  // Use AI-generated story from backend (OpenRouter with user prompt), or fallback
   const story = customStory || (result ? generateStory(result) : 
-    "Waiting for training results... Upload a dataset to see AI-generated insights.")
+    "Waiting for analysis results... Upload a dataset to see AI-generated insights.")
 
-  // Get chart data from result (actual data from CSV analysis, not mock)
-  const chartData = result?.insight?.chartData ? {
-    correlationMatrix: result.insight.chartData.correlationMatrix || [],
-    trends: result.insight.chartData.trends || [],
-    clusters: result.insight.chartData.clusters || [],
-    summary: result.insight.chartData.summary || {
-      total_samples: 0,
-      numeric_columns: 0,
-      categorical_columns: 0,
-      strong_correlations: 0,
-      outliers_count: 0,
-    },
-  } : {
+  // Get chart data from result (new structure: chartData or analysisSummary.chartsData)
+  const chartData = result?.chartData || result?.analysisSummary?.chartsData || {
     // Fallback: empty charts if no data
     correlationMatrix: [],
     trends: [],
     clusters: [],
+    outliers: [],
     summary: {
       total_samples: 0,
       numeric_columns: 0,
@@ -121,11 +194,15 @@ export default function AnalysisPage() {
           <div className="flex items-start justify-between">
             <div>
               <h1 className="text-4xl font-bold text-foreground text-balance">
-                {result?.insight?.title || 'Data Analysis Results'}
+                {result?.llmInsights?.title || result?.insight?.title || 'Data Analysis Results'}
               </h1>
               <p className="text-muted-foreground mt-2">
-                Generated with federated learning across {result?.insight?.metrics?.numWorkers || result?.updates?.length || 2} collaborative nodes
-                {result?.aggregatedAt && ` • ${new Date(result.aggregatedAt).toLocaleString()}`}
+                {result?.analysisSummary?.dataInsights?.num_samples 
+                  ? `Analyzed ${result.analysisSummary.dataInsights.num_samples} samples with ${result.analysisSummary.dataInsights.columns?.length || 0} columns`
+                  : 'Generated with AI-powered data analysis'
+                }
+                {result?.fileType && ` • ${result.fileType.toUpperCase()} file`}
+                {result?.fileName && ` • ${result.fileName}`}
               </p>
             </div>
             <div className="flex gap-2">
@@ -147,13 +224,14 @@ export default function AnalysisPage() {
           {/* AI Story - Hero Section */}
           <AIStoryComponent story={story} />
 
-          {/* Key Findings from AI (if available) */}
-          {result?.insight?.keyFindings && result.insight.keyFindings.length > 0 && (
+          {/* Key Findings from AI (if available) - New structure first, then legacy */}
+          {(result?.llmInsights?.keyFindings && result.llmInsights.keyFindings.length > 0) || 
+           (result?.insight?.keyFindings && result.insight.keyFindings.length > 0) ? (
             <Card className="bg-card border-border">
               <CardContent className="pt-6">
                 <h3 className="font-semibold text-lg text-foreground mb-4">Key Findings</h3>
                 <ul className="space-y-2">
-                  {result.insight.keyFindings.map((finding, idx) => (
+                  {(result?.llmInsights?.keyFindings || result?.insight?.keyFindings || []).map((finding, idx) => (
                     <li key={idx} className="flex items-start gap-2">
                       <span className="text-primary mt-1">•</span>
                       <span className="text-foreground">{finding}</span>
@@ -162,15 +240,16 @@ export default function AnalysisPage() {
                 </ul>
               </CardContent>
             </Card>
-          )}
+          ) : null}
 
-          {/* Recommendations from AI (if available) */}
-          {result?.insight?.recommendations && result.insight.recommendations.length > 0 && (
+          {/* Recommendations from AI (if available) - New structure first, then legacy */}
+          {(result?.llmInsights?.recommendations && result.llmInsights.recommendations.length > 0) ||
+           (result?.insight?.recommendations && result.insight.recommendations.length > 0) ? (
             <Card className="bg-primary/5 border-primary/30">
               <CardContent className="pt-6">
                 <h3 className="font-semibold text-lg text-foreground mb-4">Recommendations</h3>
                 <ul className="space-y-2">
-                  {result.insight.recommendations.map((rec, idx) => (
+                  {(result?.llmInsights?.recommendations || result?.insight?.recommendations || []).map((rec, idx) => (
                     <li key={idx} className="flex items-start gap-2">
                       <span className="text-primary mt-1">→</span>
                       <span className="text-foreground">{rec}</span>
@@ -179,16 +258,50 @@ export default function AnalysisPage() {
                 </ul>
               </CardContent>
             </Card>
-          )}
+          ) : null}
 
-          {/* Optional Prompt for Personalization */}
+          {/* Optional Prompt for Personalization - Now with Regenerate */}
           <PromptInput 
-            onSubmit={(text) => {
+            onSubmit={async (text) => {
+              if (!result?.blobId) {
+                toast.error('No analysis data available. Please upload a file first.')
+                return
+              }
+
+              setRegenerating(true)
               setPrompt(text)
-              // Note: Prompt personalization would require re-generating insight with new prompt
-              // For now, just show message
-              toast.info('Prompt received. Future: This will regenerate insights with your question.')
+              
+              try {
+                const regenerateResult = await regenerateInsights({
+                  blobId: result.blobId,
+                  prompt: text,
+                })
+
+                if (regenerateResult.success && regenerateResult.result) {
+                  // Update result with new insights
+                  setResult({
+                    ...result,
+                    llmInsights: regenerateResult.result.llmInsights,
+                    chartData: regenerateResult.result.chartData || result.chartData,
+                    analysisSummary: regenerateResult.result.analysisSummary || result.analysisSummary,
+                  })
+                  
+                  // Update custom story
+                  setCustomStory(regenerateResult.result.llmInsights.summary)
+                  
+                  toast.success('Insights regenerated successfully!')
+                } else {
+                  toast.error(regenerateResult.error || 'Failed to regenerate insights')
+                }
+              } catch (error: any) {
+                console.error('Regenerate error:', error)
+                toast.error(error.message || 'Failed to regenerate insights')
+              } finally {
+                setRegenerating(false)
+              }
             }}
+            disabled={regenerating || !result?.blobId}
+            initialValue={prompt}
           />
 
           {/* Charts Grid */}
@@ -210,9 +323,46 @@ export default function AnalysisPage() {
             <CardContent className="pt-6">
               <div className="space-y-4">
                 <h3 className="font-semibold text-foreground">On-Chain Verification</h3>
-                {result?.proof ? (
+                {(result?.suiTx || result?.blobId || result?.proof) ? (
                   <>
-                    {result.proof.suiTxHash && (
+                    {result.suiTx && (
+                      <div className="space-y-2">
+                        <p className="text-sm text-muted-foreground">Sui Transaction Hash:</p>
+                        <div className="bg-background rounded-lg p-4 font-mono text-sm text-foreground break-all flex items-center justify-between">
+                          <span>{result.suiTx}</span>
+                          {result.suiExplorerUrl && (
+                            <a
+                              href={result.suiExplorerUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="ml-2 text-primary hover:underline"
+                            >
+                              <ExternalLink className="w-4 h-4" />
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                    {result.blobId && (
+                      <div className="space-y-2">
+                        <p className="text-sm text-muted-foreground">Walrus Blob ID:</p>
+                        <div className="bg-background rounded-lg p-4 font-mono text-sm text-foreground break-all flex items-center justify-between">
+                          <span>{result.blobId}</span>
+                          {result.walrusScanUrl && (
+                            <a
+                              href={result.walrusScanUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="ml-2 text-primary hover:underline"
+                            >
+                              <ExternalLink className="w-4 h-4" />
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                    {/* Legacy proof support */}
+                    {result.proof?.suiTxHash && !result.suiTx && (
                       <div className="space-y-2">
                         <p className="text-sm text-muted-foreground">Sui Transaction Hash:</p>
                         <div className="bg-background rounded-lg p-4 font-mono text-sm text-foreground break-all flex items-center justify-between">
@@ -228,7 +378,7 @@ export default function AnalysisPage() {
                         </div>
                       </div>
                     )}
-                    {result.proof.walrusCid && (
+                    {result.proof?.walrusCid && !result.blobId && (
                       <div className="space-y-2">
                         <p className="text-sm text-muted-foreground">Walrus CID:</p>
                         <div className="bg-background rounded-lg p-4 font-mono text-sm text-foreground break-all flex items-center justify-between">
@@ -246,29 +396,23 @@ export default function AnalysisPage() {
                         </div>
                       </div>
                     )}
-                    {result.proof.blobObjectId && (
+                    {result.fileHash && (
                       <div className="space-y-2">
-                        <p className="text-sm text-muted-foreground">Blob Object ID:</p>
+                        <p className="text-sm text-muted-foreground">File Hash (SHA256):</p>
                         <div className="bg-background rounded-lg p-4 font-mono text-sm text-foreground break-all">
-                          {result.proof.blobObjectId}
+                          {result.fileHash}
                         </div>
                       </div>
                     )}
                   </>
                 ) : (
                   <div className="bg-background rounded-lg p-4 font-mono text-sm text-muted-foreground break-all">
-                    0xa7f2c...e3b4d
+                    No on-chain proof available
                   </div>
                 )}
                 <p className="text-sm text-muted-foreground">
-                  This analysis is verified on Sui blockchain. Federated learning nodes have cryptographically signed this result.
+                  This analysis is verified on Sui blockchain and stored on Walrus. The audit payload is encrypted with Seal for privacy.
                 </p>
-                {result?.globalModelHash && (
-                  <div className="pt-2 border-t border-border">
-                    <p className="text-xs text-muted-foreground">Model Hash:</p>
-                    <p className="text-xs font-mono text-foreground">{result.globalModelHash}</p>
-                  </div>
-                )}
               </div>
             </CardContent>
           </Card>

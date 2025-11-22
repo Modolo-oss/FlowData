@@ -1,6 +1,6 @@
 /**
  * Session Key Generation for Sui Seal Encryption
- * Generates ephemeral session keys for encrypted federated learning
+ * Generates ephemeral session keys for encrypted data analysis
  */
 
 // Note: IntentScope is not exported from @mysten/sui/cryptography in this version

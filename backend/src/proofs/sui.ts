@@ -6,6 +6,8 @@ import { config } from "../config.js";
 export async function recordOnSui(input: {
 	walrusCid: string;
 	participants: string[];
+	fileHash?: string;
+	metadata?: Record<string, any>;
 }): Promise<{ txHash: string }> {
 	try {
 		const network = config.suiNetwork as "mainnet" | "testnet" | "devnet" | "localnet";

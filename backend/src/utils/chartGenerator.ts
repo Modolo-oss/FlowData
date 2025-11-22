@@ -1,38 +1,21 @@
 /**
- * Chart Generator from Data Insights
- * Aggregates insights from workers and generates chart data from actual CSV data
+ * Chart Generator
+ * Generates chart data from data insights for frontend visualization
+ * Dynamically generates charts based on available data
  */
 
-import { TrainUpdate } from "../types.js";
+import { DataInsights } from "./csvAnalyzer.js";
 
-interface DataInsight {
-	num_samples: number;
-	columns: string[];
-	numeric_columns?: string[];
-	categorical_columns?: string[];
-	statistics?: Record<string, any>;
-	correlations?: Array<{ x: string; y: string; value: number }>;
-	clusters?: Array<{ x: number; y: number; cluster: string; label: string }>;
-	trends?: Array<{ metric: string; over: string; direction: string; change: number; data_points: any[] }>;
-	outliers?: Array<{ column: string; row: number; value: number; deviation: number }>;
-}
-
-interface AggregatedInsights {
-	num_samples: number;
-	columns: string[];
-	numeric_columns: string[];
-	categorical_columns: string[];
-	statistics: Record<string, any>;
-	correlations: Array<{ x: string; y: string; value: number }>;
-	clusters: Array<{ x: number; y: number; cluster: string; label: string }>;
-	trends: Array<{ metric: string; over: string; direction: string; change: number; data_points: any[] }>;
-	outliers: Array<{ column: string; row: number; value: number; deviation: number }>;
-}
-
-interface ChartData {
+export interface ChartsData {
 	correlationMatrix: Array<{ x: string; y: string; value: number }>;
-	trends: Array<{ date: string; value: number }>;
+	trends: Array<{ date: string; value: number; label?: string }>;
 	clusters: Array<{ x: number; y: number; cluster: string; label: string }>;
+	outliers: Array<{ column: string; row: number; value: number; deviation: number }>;
+	// Key-value bar chart
+	keyValueBarChart?: {
+		title: string;
+		data: Array<{ name: string; value: number }>;
+	};
 	summary: {
 		total_samples: number;
 		numeric_columns: number;
@@ -42,172 +25,167 @@ interface ChartData {
 	};
 }
 
-/**
- * Aggregate data insights from multiple workers
- */
-export function aggregateDataInsights(insights: DataInsight[]): AggregatedInsights {
-	if (!insights || insights.length === 0) {
-		return {
-			num_samples: 0,
-			columns: [],
-			numeric_columns: [],
-			categorical_columns: [],
-			statistics: {},
-			correlations: [],
-			clusters: [],
-			trends: [],
-			outliers: [],
-		};
-	}
-
-	// Aggregate total samples
-	const total_samples = insights.reduce((sum, insight) => sum + (insight.num_samples || 0), 0);
-
-	// Combine all columns (unique)
-	const allColumns = new Set<string>();
-	const allNumericColumns = new Set<string>();
-	const allCategoricalColumns = new Set<string>();
-
-	insights.forEach(insight => {
-		(insight.columns || []).forEach(col => allColumns.add(col));
-		(insight.numeric_columns || []).forEach(col => allNumericColumns.add(col));
-		(insight.categorical_columns || []).forEach(col => allCategoricalColumns.add(col));
-	});
-
-	// Aggregate statistics (merge from all workers)
-	const aggregatedStats: Record<string, any> = {};
-	insights.forEach(insight => {
-		if (insight.statistics) {
-			Object.entries(insight.statistics).forEach(([col, stats]) => {
-				if (!aggregatedStats[col]) {
-					aggregatedStats[col] = { ...stats };
-				} else {
-					// Merge statistics (for numeric: average, for categorical: combine top values)
-					if (stats.type === "numeric" && aggregatedStats[col].type === "numeric") {
-						aggregatedStats[col] = {
-							...aggregatedStats[col],
-							count: (aggregatedStats[col].count || 0) + (stats.count || 0),
-							mean: ((aggregatedStats[col].mean || 0) + (stats.mean || 0)) / 2,
-							min: Math.min(aggregatedStats[col].min || Infinity, stats.min || Infinity),
-							max: Math.max(aggregatedStats[col].max || -Infinity, stats.max || -Infinity),
-						};
-					} else if (stats.type === "categorical" && aggregatedStats[col].type === "categorical") {
-						// Combine top values
-						const top1 = aggregatedStats[col].top_values || {};
-						const top2 = stats.top_values || {};
-						const combined = { ...top1 };
-						Object.entries(top2).forEach(([val, count]) => {
-							combined[val] = (combined[val] || 0) + (count as number);
-						});
-						aggregatedStats[col].top_values = combined;
-						aggregatedStats[col].count = (aggregatedStats[col].count || 0) + (stats.count || 0);
-					}
-				}
-			});
-		}
-	});
-
-	// Combine correlations (deduplicate and average if duplicates)
-	const correlationMap = new Map<string, number>();
-	insights.forEach(insight => {
-		(insight.correlations || []).forEach(corr => {
-			const key = `${corr.x}-${corr.y}`;
-			const reverseKey = `${corr.y}-${corr.x}`;
+export function generateChartsFromDataInsights(insights: DataInsights): ChartsData {
+	// ✅ INTELLIGENT CHART GENERATION: Only generate charts that are RELEVANT to the data
+	
+	// 1. Correlations: Only if we have 2+ numeric columns with actual correlations
+	const correlationMatrix = (insights.correlations || []).filter(corr => Math.abs(corr.value) > 0.1); // Only meaningful correlations
+	
+	// 2. Trends: ONLY if we have time-based trends (NOT row index!)
+	let trends: Array<{ date: string; value: number; label?: string }> = [];
+	if (insights.trends && insights.trends.length > 0) {
+		// Filter out "row index" trends - only keep real time-based trends
+		for (const trendData of insights.trends) {
+			// ❌ SKIP trends over "row index" - itu tidak bermakna!
+			if (trendData.over && trendData.over.toLowerCase().includes("row index")) {
+				console.log(`[CHARTS] Skipping irrelevant trend: ${trendData.metric} over ${trendData.over}`);
+				continue;
+			}
 			
-			if (correlationMap.has(key) || correlationMap.has(reverseKey)) {
-				const existingKey = correlationMap.has(key) ? key : reverseKey;
-				const existing = correlationMap.get(existingKey) || 0;
-				correlationMap.set(existingKey, (existing + corr.value) / 2);
-			} else {
-				correlationMap.set(key, corr.value);
+			// Only include trends with actual time-based data
+			if (trendData.data_points && trendData.data_points.length > 0) {
+				trends.push(...trendData.data_points.map(dp => ({
+					date: dp.date,
+					value: dp.value,
+					label: `${trendData.metric} over ${trendData.over}`,
+				})));
 			}
-		});
+		}
+	}
+	
+	// 3. Clusters: Only if we have meaningful clusters (2+ numeric columns, sufficient data)
+	const clusters = (insights.clusters || []).filter((cluster, idx, arr) => {
+		// Only keep clusters if we have meaningful spread (not all same cluster)
+		const uniqueClusters = new Set(arr.map(c => c.cluster));
+		return uniqueClusters.size >= 2; // Only if we have multiple clusters
 	});
+	
+	// Generate key-value bar chart if detected
+	let keyValueBarChart: { title: string; data: Array<{ name: string; value: number }> } | undefined;
+	if (insights.isKeyValueStructure && insights.keyColumn && insights.valueColumn && insights.keyValuePairs) {
+		keyValueBarChart = {
+			title: `${insights.keyColumn} vs ${insights.valueColumn}`,
+			data: insights.keyValuePairs.map(kv => ({
+				name: kv.key,
+				value: kv.value,
+			})),
+		};
+		console.log(`[CHARTS] Generated key-value bar chart: ${keyValueBarChart.data.length} entries`);
+	}
+	
+	// Use outliers from insights (already detected from actual CSV rows)
+	const outliers = insights.outliers || [];
 
-	const correlations: Array<{ x: string; y: string; value: number }> = [];
-	correlationMap.forEach((value, key) => {
-		const [x, y] = key.split("-");
-		correlations.push({ x, y, value });
+	// Count strong correlations (|value| > 0.5)
+	const strong_correlations = correlationMatrix.filter(
+		(c) => Math.abs(c.value) > 0.5
+	).length;
+
+	console.log(`[CHARTS] Generated charts from ACTUAL CSV data (NO FALLBACK):`, {
+		correlations: correlationMatrix.length,
+		trends: trends.length,
+		clusters: clusters.length,
+		outliers: outliers.length,
+		keyValueBarChart: keyValueBarChart ? keyValueBarChart.data.length : 0,
+		isKeyValueStructure: insights.isKeyValueStructure,
+		hasTrendData: trends.length > 0,
+		hasClusterData: clusters.length > 0,
+		summary: {
+			total_samples: insights.num_samples,
+			numeric_columns: insights.numeric_columns?.length || 0,
+			categorical_columns: insights.categorical_columns?.length || 0,
+			strong_correlations,
+			outliers_count: outliers.length,
+		},
 	});
-
-	// Combine clusters (from all workers)
-	const allClusters: Array<{ x: number; y: number; cluster: string; label: string }> = [];
-	insights.forEach(insight => {
-		(insight.clusters || []).forEach(cluster => {
-			allClusters.push(cluster);
-		});
-	});
-
-	// Combine trends (merge time series if same metric)
-	const trendMap = new Map<string, any>();
-	insights.forEach(insight => {
-		(insight.trends || []).forEach(trend => {
-			const key = `${trend.metric}-${trend.over}`;
-			if (!trendMap.has(key)) {
-				trendMap.set(key, { ...trend, data_points: [] });
-			}
-			const existing = trendMap.get(key)!;
-			existing.data_points.push(...(trend.data_points || []));
-		});
-	});
-	const trends = Array.from(trendMap.values());
-
-	// Combine outliers
-	const allOutliers: Array<{ column: string; row: number; value: number; deviation: number }> = [];
-	insights.forEach((insight, workerIdx) => {
-		(insight.outliers || []).forEach(outlier => {
-			allOutliers.push({ ...outlier, row: workerIdx * 1000 + outlier.row }); // Offset row numbers
-		});
-	});
-
-	return {
-		num_samples: total_samples,
-		columns: Array.from(allColumns),
-		numeric_columns: Array.from(allNumericColumns),
-		categorical_columns: Array.from(allCategoricalColumns),
-		statistics: aggregatedStats,
-		correlations: correlations.sort((a, b) => Math.abs(b.value) - Math.abs(a.value)), // Sort by absolute correlation
-		clusters: allClusters,
-		trends,
-		outliers: allOutliers.slice(0, 20), // Limit to top 20 outliers
-	};
-}
-
-/**
- * Generate chart data from aggregated data insights
- */
-export function generateChartsFromDataInsights(insights: AggregatedInsights): ChartData {
-	// Correlation matrix
-	const correlationMatrix = insights.correlations || [];
-
-	// Trends (flatten time series)
-	const trends: Array<{ date: string; value: number }> = [];
-	insights.trends.forEach(trend => {
-		(trend.data_points || []).forEach(point => {
-			trends.push({
-				date: point.date || "",
-				value: point.value || 0,
-			});
-		});
-	});
-
-	// Clusters
-	const clusters = insights.clusters || [];
-
-	// Summary statistics
-	const summary = {
-		total_samples: insights.num_samples || 0,
-		numeric_columns: insights.numeric_columns?.length || 0,
-		categorical_columns: insights.categorical_columns?.length || 0,
-		strong_correlations: correlationMatrix.filter(c => Math.abs(c.value) > 0.7).length,
-		outliers_count: insights.outliers?.length || 0,
-	};
 
 	return {
 		correlationMatrix,
-		trends: trends.sort((a, b) => a.date.localeCompare(b.date)), // Sort by date
+		trends,
 		clusters,
-		summary,
+		outliers,
+		keyValueBarChart,
+		summary: {
+			total_samples: insights.num_samples,
+			numeric_columns: insights.numeric_columns?.length || 0,
+			categorical_columns: insights.categorical_columns?.length || 0,
+			strong_correlations,
+			outliers_count: outliers.length,
+		},
 	};
 }
 
+/**
+ * ✅ LLM-GENERATED CHARTS CONVERTER
+ * Converts LLM-generated chart specifications to ChartsData format
+ * No more hardcoded logic - LLM decides what charts are relevant!
+ */
+export function convertLLMChartsToChartsData(
+	llmCharts: {
+		trends?: Array<{ date: string; value: number; label?: string }>;
+		barCharts?: Array<{ title: string; data: Array<{ name: string; value: number }> }>;
+		scatterPlots?: Array<{ title: string; data: Array<{ x: number; y: number; label?: string }> }>;
+		pieCharts?: Array<{ title: string; data: Array<{ name: string; value: number }> }>;
+		lineCharts?: Array<{ title: string; data: Array<{ x: string | number; y: number; label?: string }> }>;
+		correlations?: Array<{ x: string; y: string; value: number }>;
+	},
+	insights: DataInsights
+): ChartsData {
+	// ✅ Use LLM-generated trends (intelligent, not hardcoded!)
+	const trends = llmCharts.trends || llmCharts.lineCharts?.map(lc => 
+		lc.data.map(d => ({ date: String(d.x), value: d.y, label: lc.title }))
+	).flat() || [];
+	
+	// ✅ Use LLM-generated bar charts (convert first one to keyValueBarChart if needed)
+	let keyValueBarChart: { title: string; data: Array<{ name: string; value: number }> } | undefined;
+	if (llmCharts.barCharts && llmCharts.barCharts.length > 0) {
+		keyValueBarChart = llmCharts.barCharts[0];
+	} else if (llmCharts.pieCharts && llmCharts.pieCharts.length > 0) {
+		keyValueBarChart = llmCharts.pieCharts[0];
+	}
+	
+	// ✅ Use LLM-generated scatter plots as clusters
+	const clusters = llmCharts.scatterPlots?.flatMap(sp => 
+		sp.data.map((d, idx) => ({
+			x: d.x,
+			y: d.y,
+			cluster: String(idx % 3), // Simple cluster assignment
+			label: d.label || sp.title,
+		}))
+	) || [];
+	
+	// ✅ Use LLM-generated correlations
+	const correlationMatrix = llmCharts.correlations || [];
+	
+	// Outliers - keep from insights (harder for LLM to generate accurately)
+	const outliers = insights.outliers || [];
+	
+	const strong_correlations = correlationMatrix.filter(
+		(c) => Math.abs(c.value) > 0.5
+	).length;
+	
+	console.log(`[CHARTS] ✅ Converted LLM-generated charts:`, {
+		trends: trends.length,
+		barCharts: llmCharts.barCharts?.length || 0,
+		scatterPlots: llmCharts.scatterPlots?.length || 0,
+		pieCharts: llmCharts.pieCharts?.length || 0,
+		lineCharts: llmCharts.lineCharts?.length || 0,
+		correlations: correlationMatrix.length,
+		keyValueBarChart: keyValueBarChart ? keyValueBarChart.data.length : 0,
+	});
+	
+	return {
+		correlationMatrix,
+		trends,
+		clusters,
+		outliers,
+		keyValueBarChart,
+		summary: {
+			total_samples: insights.num_samples,
+			numeric_columns: insights.numeric_columns?.length || 0,
+			categorical_columns: insights.categorical_columns?.length || 0,
+			strong_correlations,
+			outliers_count: outliers.length,
+		},
+	};
+}
