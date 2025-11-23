@@ -1,8 +1,12 @@
 /**
- * React hook for Sui Wallet integration
+ * React hook for Sui Wallet integration using @mysten/dapp-kit (OFFICIAL)
+ * Supports ALL Sui wallets via Wallet Standard API (Slush, Sui Wallet, Suiet, etc.)
  */
 
 import { useState, useEffect, useCallback } from 'react';
+import { useCurrentAccount, useConnectWallet, useDisconnectWallet, useWallets, useSignAndExecuteTransaction } from '@mysten/dapp-kit';
+import { useSignPersonalMessage } from '@mysten/dapp-kit';
+import { Transaction } from '@mysten/sui/transactions';
 
 export interface WalletState {
   connected: boolean;
@@ -13,147 +17,160 @@ export interface WalletState {
 }
 
 export function useSuiWallet() {
-  const [state, setState] = useState<WalletState>({
-    connected: false,
-    loading: false,
-  });
+  // Use official dapp-kit hooks
+  const currentAccount = useCurrentAccount();
+  const { mutate: connectWallet, isPending: isConnecting } = useConnectWallet();
+  const { mutate: disconnectWallet } = useDisconnectWallet();
+  const { mutate: signPersonalMessage } = useSignPersonalMessage();
+  const { mutateAsync: signAndExecuteTransaction } = useSignAndExecuteTransaction();
+  const wallets = useWallets();
+  
+  const [error, setError] = useState<string | undefined>(undefined);
+  const [mounted, setMounted] = useState(false);
 
-  // Check if wallet is available - start with false to prevent hydration mismatch
-  const [isWalletAvailable, setIsWalletAvailable] = useState(false);
-
-  // Check wallet availability on client only (after hydration)
+  // Prevent hydration mismatch - only set mounted after client-side render
   useEffect(() => {
-    setIsWalletAvailable(typeof window !== 'undefined' && 'sui' in window);
+    setMounted(true);
   }, []);
+
+  // Derive state from dapp-kit
+  const connected = !!currentAccount;
+  const address = currentAccount?.address;
+  // Only check wallet availability after mount to prevent hydration mismatch
+  const isWalletAvailable = mounted ? wallets.length > 0 : false;
 
   // Connect wallet
   const connect = useCallback(async () => {
     if (!isWalletAvailable) {
-      setState((prev) => ({
-        ...prev,
-        error: 'Sui Wallet not found. Please install Sui Wallet extension.',
-      }));
+      setError('Sui Wallet not found. Please install a Sui wallet extension (Slush, Sui Wallet, Suiet, etc.).');
       return;
     }
 
-    setState((prev) => ({ ...prev, loading: true, error: undefined }));
+    setError(undefined);
 
     try {
-      const suiWallet = (window as any).sui;
+      // Get first available wallet
+      const wallet = wallets[0];
       
-      // First, try to get existing accounts (might already be connected)
-      let accounts: any[] = [];
-      if (typeof suiWallet.getAccounts === 'function') {
-        try {
-          accounts = await suiWallet.getAccounts();
-        } catch (e) {
-          // getAccounts might fail if not connected, continue to requestPermissions
-        }
+      if (!wallet) {
+        throw new Error('No wallet available');
       }
-      
-      // If no accounts found, request permissions
-      if (!accounts || accounts.length === 0) {
-        if (typeof suiWallet.requestPermissions === 'function') {
-          accounts = await suiWallet.requestPermissions();
-        } else {
-          throw new Error('Wallet does not support requestPermissions');
+
+      // Connect using dapp-kit
+      connectWallet(
+        {
+          wallet: wallet,
+        },
+        {
+          onSuccess: () => {
+            console.log('[WALLET] ✅ Connected:', wallet.name, address);
+            setError(undefined);
+          },
+          onError: (error) => {
+            console.error('[WALLET] Connection error:', error);
+            setError(error.message || 'Failed to connect wallet');
+          },
         }
-      }
-      
-      if (accounts && accounts.length > 0) {
-        const account = accounts[0];
-        // Handle different account formats (object with address or string)
-        const address = typeof account === 'string' ? account : (account.address || account.accounts?.[0]?.address);
-        
-        if (!address) {
-          throw new Error('No address found in account');
-        }
-        
-        setState({
-          connected: true,
-          address,
-          chain: account.chains?.[0] || account.chain || 'sui:testnet',
-          loading: false,
-        });
-      } else {
-        setState((prev) => ({
-          ...prev,
-          loading: false,
-          error: 'No accounts found',
-        }));
-      }
+      );
     } catch (error: any) {
-      setState((prev) => ({
-        ...prev,
-        loading: false,
-        error: error.message || 'Failed to connect wallet',
-      }));
+      console.error('[WALLET] Connection error:', error);
+      setError(error.message || 'Failed to connect wallet');
     }
-  }, [isWalletAvailable]);
+  }, [isWalletAvailable, wallets, connectWallet, address]);
 
   // Disconnect wallet
   const disconnect = useCallback(() => {
-    setState({
-      connected: false,
-      loading: false,
+    disconnectWallet(undefined, {
+      onSuccess: () => {
+        console.log('[WALLET] ✅ Disconnected');
+        setError(undefined);
+      },
+      onError: (error) => {
+        console.error('[WALLET] Disconnect error:', error);
+      },
     });
-  }, []);
+  }, [disconnectWallet]);
 
   // Sign message (for session key generation)
   const signMessage = useCallback(
     async (message: Uint8Array): Promise<string> => {
-      if (!state.connected || !isWalletAvailable) {
+      if (!connected || !currentAccount) {
         throw new Error('Wallet not connected');
       }
 
       try {
-        const suiWallet = (window as any).sui;
-        const result = await suiWallet.signMessage({
-          message,
+        // Convert Uint8Array to string for signPersonalMessage
+        const messageString = new TextDecoder().decode(message);
+
+        return new Promise((resolve, reject) => {
+          signPersonalMessage(
+            {
+              message: new TextEncoder().encode(messageString),
+            },
+            {
+              onSuccess: (result) => {
+                console.log('[WALLET] ✅ Message signed');
+                // signPersonalMessage returns { bytes: string, signature: string }
+                if (result.signature) {
+                  resolve(result.signature);
+                } else {
+                  reject(new Error('No signature returned'));
+                }
+              },
+              onError: (error) => {
+                console.error('[WALLET] Sign error:', error);
+                reject(new Error(`Failed to sign message: ${error.message}`));
+              },
+            }
+          );
         });
-        return result.signature;
       } catch (error: any) {
         throw new Error(`Failed to sign message: ${error.message}`);
       }
     },
-    [state.connected, isWalletAvailable]
+    [connected, currentAccount, signPersonalMessage]
   );
 
-  // Check connection status on mount (try to get accounts silently)
+  // Log available wallets on mount
   useEffect(() => {
-    if (isWalletAvailable) {
-      const suiWallet = (window as any).sui;
-      
-      // Try to get accounts without requesting permissions (silent check)
-      // This checks if wallet is already connected
-      if (typeof suiWallet.getAccounts === 'function') {
-        suiWallet.getAccounts()
-          .then((accounts: any[]) => {
-            if (accounts && accounts.length > 0) {
-              // Wallet is already connected, update state
-              const account = accounts[0];
-              setState({
-                connected: true,
-                address: account.address || account,
-                chain: account.chains?.[0] || 'sui:testnet',
-                loading: false,
-              });
-            }
-          })
-          .catch(() => {
-            // Silently fail - wallet not connected or permission not granted
-            // User will need to manually connect
-          });
-      }
+    if (wallets.length > 0) {
+      console.log('[WALLET] ✅ Available Sui wallets:', wallets.map(w => w.name));
+    } else {
+      console.log('[WALLET] ❌ No Sui wallets detected');
+      console.log('[WALLET] 💡 Please install a Sui wallet extension (Slush, Sui Wallet, Suiet, etc.)');
     }
-  }, [isWalletAvailable]);
+  }, [wallets]);
+
+  // Sign and execute transaction (for Walrus upload, etc.)
+  const signTransactionBlock = useCallback(
+    async (transaction: Transaction) => {
+      if (!connected || !currentAccount) {
+        throw new Error('Wallet not connected');
+      }
+
+      try {
+        const result = await signAndExecuteTransaction({
+          transaction,
+        });
+        return result;
+      } catch (error: any) {
+        throw new Error(`Failed to sign transaction: ${error.message}`);
+      }
+    },
+    [connected, currentAccount, signAndExecuteTransaction]
+  );
 
   return {
-    ...state,
+    connected,
+    address,
+    chain: connected ? 'sui:testnet' : undefined,
+    loading: isConnecting,
+    error,
     isWalletAvailable,
     connect,
     disconnect,
     signMessage,
+    signTransactionBlock, // For signing transaction blocks (e.g., Walrus upload)
+    wallets, // Expose wallets list for UI
   };
 }
-

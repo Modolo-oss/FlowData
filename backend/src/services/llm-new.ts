@@ -113,17 +113,34 @@ export async function generateInsightFromAnalysis(request: {
 
 function buildAnalysisPrompt(request: { analysisSummary: AnalysisSummary; userPrompt?: string }): string {
 	const { analysisSummary, userPrompt } = request;
-	const { dataInsights, chartsData } = analysisSummary;
+	const { dataInsights, chartsData, sampleRows } = analysisSummary;
 
-	let prompt = `You are a FLEXIBLE data analysis expert. Your job is to INTELLIGENTLY understand and analyze ANY data structure the user uploads.
+	let prompt = `You are a BUSINESS INTELLIGENCE analyst. Your job is to analyze the ACTUAL CONTENT and MEANING of the data, NOT just metadata.
 
-CRITICAL: The user can upload ANY format - your job is to ADAPT and UNDERSTAND it, not require specific formats.
+🚨 CRITICAL: Focus on WHAT THE DATA SHOWS, not how many rows or columns it has!
 
-DATA ANALYSIS SUMMARY:
-- Total samples: ${dataInsights.num_samples}
-- Columns: ${dataInsights.columns.join(", ")}
-- Raw data structure: ${dataInsights.num_samples > 0 ? "Detected" : "Empty"}
+The user wants insights about:
+- What is happening in the data (actual events, transactions, values)
+- Business insights and patterns
+- What the numbers/categories actually mean
+- Specific findings from the ACTUAL data content
+
+DO NOT waste time describing "12 samples, 3 columns" - that's just metadata!
+DO focus on "cash_in_echannel transaction of 27,676,440,603.60" - that's actual content!
+
 `;
+
+	// ✅ ADD ACTUAL DATA SAMPLES - THIS IS THE KEY!
+	if (sampleRows && sampleRows.length > 0) {
+		prompt += `\n📊 ACTUAL DATA CONTENT (first ${Math.min(20, sampleRows.length)} rows):\n`;
+		prompt += `\`\`\`json\n${JSON.stringify(sampleRows.slice(0, 20), null, 2)}\n\`\`\`\n`;
+		prompt += `\n⚠️ ANALYZE THIS ACTUAL DATA CONTENT, NOT METADATA!\n\n`;
+	}
+
+	// Add metadata as context only (not focus)
+	prompt += `\n📋 Data Structure Context (for reference only):\n`;
+	prompt += `- Columns: ${dataInsights.columns.join(", ")}\n`;
+	prompt += `- Total records: ${dataInsights.num_samples}\n`;
 
 	// CRITICAL: If key-value structure, explain it clearly
 	if ((dataInsights as any).isKeyValueStructure && (dataInsights as any).keyColumn && (dataInsights as any).valueColumn) {
@@ -135,13 +152,13 @@ DATA ANALYSIS SUMMARY:
 		prompt += `- Each row represents ONE metric/field with its value\n`;
 		prompt += `- This is like a configuration file or benchmark report, NOT a data table\n`;
 		if ((dataInsights as any).keyValuePairs && (dataInsights as any).keyValuePairs.length > 0) {
-			prompt += `\nKEY-VALUE PAIRS (first 10):\n`;
-			((dataInsights as any).keyValuePairs as Array<{ key: string; value: number }>).slice(0, 10).forEach((kv: { key: string; value: number }) => {
-				prompt += `  "${kv.key}": ${kv.value}\n`;
+			prompt += `\nKEY-VALUE PAIRS (first 15 with actual values):\n`;
+			((dataInsights as any).keyValuePairs as Array<{ key: string; value: number }>).slice(0, 15).forEach((kv: { key: string; value: number }) => {
+				prompt += `  "${kv.key}": ${kv.value.toLocaleString()}\n`;
 			});
 		}
 		prompt += `\n⚠️ DO NOT analyze this as time series, trends, or correlations!\n`;
-		prompt += `⚠️ Focus on individual metrics and their values!\n`;
+		prompt += `⚠️ Focus on what each metric MEANS and its ACTUAL VALUE!\n`;
 		prompt += `⚠️ This is a single record/snapshot, not a dataset with multiple samples!\n\n`;
 	}
 
@@ -213,17 +230,30 @@ DATA ANALYSIS SUMMARY:
 	}
 
 	prompt += `\nPlease provide:
-1. A concise title (max 10 words) based on the ACTUAL data structure
+1. A concise title (max 10 words) describing WHAT THE DATA IS ABOUT (not "Data Analysis"!)
+
 2. A detailed summary (2-3 paragraphs) explaining:
-   - What the data ACTUALLY shows (be specific, don't make assumptions)
-   - If key-value: focus on individual metrics and their values
-   - If time series: focus on trends over time
-   - If numeric pairs: focus on correlations and relationships
-   - Only mention patterns that ACTUALLY exist in the data
-   - Don't force trends/correlations if they don't exist
-3. Key findings (3-5 bullet points) from ACTUAL data analysis (not assumptions)
-4. Optional recommendations (if applicable) based on REAL insights
-5. Chart recommendations (suggest charts that make sense for THIS data structure)
+   ⚠️ CRITICAL: Focus on ACTUAL DATA CONTENT, NOT metadata!
+   - What is happening in the data? (e.g., "Financial transactions show cash inflows and outflows through eChannel and kantor")
+   - What are the SPECIFIC VALUES and what do they mean? (e.g., "Transaction values range from -27.6B to 240B, with an extreme outlier at row 9")
+   - What patterns or insights can you see from the ACTUAL data? (e.g., "Negative values occur only in cash_out categories, suggesting outflows")
+   - Business context and implications (what does this data tell us?)
+   - DO NOT say "12 samples, 3 columns" - that's metadata, not analysis!
+   - DO say "cash_in_echannel transactions totaling X, with outlier value Y at row Z" - that's actual content!
+
+3. Key findings (3-7 bullet points) from ACTUAL DATA CONTENT:
+   - Specific values, transactions, events found in the data
+   - Patterns in the ACTUAL data (not statistical metadata)
+   - Outliers or anomalies with actual values and context
+   - Business insights from what the data shows
+   - Example: "extreme_outlier_impact: row 9 transaction value (240,190,576,318.80) exceeds mean by 485%"
+   - NOT: "12 unique transaction types" (that's just counting!)
+
+4. Recommendations (if applicable) based on ACTUAL data findings:
+   - Actionable insights based on what you see in the data
+   - Not generic recommendations!
+
+5. Chart recommendations (suggest charts that visualize the ACTUAL data content)
 
 CRITICAL INSTRUCTIONS:
 1. INTELLIGENTLY DETECT the data structure yourself - don't assume anything
@@ -242,9 +272,19 @@ ${(dataInsights as any).isKeyValueStructure ?
 	'⚠️ KEY-VALUE STRUCTURE DETECTED: Analyze each metric individually. Focus on what each metric means and its value.' : 
 	'🔍 INTELLIGENT DETECTION: Look at the columns and data to determine what this data represents. Adapt your analysis accordingly.'}
 
-⚠️ CRITICAL: You MUST generate actual chart data based on the data provided, not just recommendations!
+⚠️ CRITICAL: You MUST generate actual chart data based on the ACTUAL DATA SAMPLES provided above, not synthetic/fake data!
 
-Look at the actual data structure and generate RELEVANT charts with REAL data points.
+🚨 CHART GENERATION RULES:
+1. Use ONLY the actual data from the sample rows provided
+2. DO NOT create synthetic labels like "outlier_row_9", "cluster_A", "point_1", etc.
+3. DO NOT create charts from metadata (e.g., "12 samples", "3 columns")
+4. If data is key-value pairs (variabel, Deskripsi, sample Data):
+   - Generate bar chart with actual transaction types as labels
+   - Use actual values from the data
+   - Example: "cash_in_echannel": 27,676,440,603.60 (from actual row)
+5. If data is time series:
+   - Generate line chart with actual dates/values
+6. If you cannot create meaningful charts from the actual data, return empty charts object: {}
 
 Format your response as JSON:
 {
@@ -302,12 +342,20 @@ Format your response as JSON:
 
 IMPORTANT:
 - Only generate charts that make sense for THIS data structure
-- Use ACTUAL data values from the analysis (not fake data)
+- Use ACTUAL data values from the sample rows provided above (not fake/synthetic data)
+- DO NOT create synthetic labels like "outlier_row_9", "cluster_A", "sample_1", etc.
+- If key-value structure (like variabel, Deskripsi, sample Data):
+  → Generate bar chart with actual transaction types/variabels as labels
+  → Use actual numeric values from the data
 - If no time column → NO trends
-- If key-value structure → generate bar chart
-- If 2+ numeric columns → generate scatter/correlation
-- If categorical → generate pie/bar chart
-- Don't generate charts with empty/fake data!
+- If no meaningful patterns → return empty charts: {}
+- If categorical data → generate bar/pie chart with actual category names
+- If you cannot create meaningful charts → return empty charts object: {}
+
+🚨 VALIDATION: Before generating charts, ask yourself:
+- Are these labels from ACTUAL DATA or synthetic?
+- Do these values come from REAL sample rows?
+- If NO → return empty charts: {}
 
 Return ONLY the JSON, no other text.`;
 
@@ -354,18 +402,15 @@ function parseInsightResponse(llmResponse: string, request: { analysisSummary: A
 }
 
 function generateFallbackInsight(request: { analysisSummary: AnalysisSummary; userPrompt?: string }): LLMInsights {
-	const { dataInsights } = request.analysisSummary;
+	// ✅ NO FALLBACK - return empty insight if LLM fails
+	// This should not happen if LLM is properly configured
 	return {
-		title: "Data Analysis Results",
-		summary: `Analyzed ${dataInsights.num_samples} samples with ${dataInsights.columns.length} columns. Found ${dataInsights.numeric_columns?.length || 0} numeric columns and ${dataInsights.categorical_columns?.length || 0} categorical columns.`,
-		keyFindings: [
-			`Total samples: ${dataInsights.num_samples}`,
-			`Columns analyzed: ${dataInsights.columns.length}`,
-			`Strong correlations: ${dataInsights.correlations?.filter((c) => Math.abs(c.value) > 0.5).length || 0}`,
-		],
+		title: "Data Analysis",
+		summary: "AI insights generation failed. Please check your OpenRouter API key configuration.",
+		keyFindings: [],
 		recommendations: [],
-		chartRecommendations: ["correlation matrix", "trend analysis", "cluster visualization"],
-		charts: {}, // No charts in fallback - LLM must generate them
+		chartRecommendations: [],
+		charts: {}, // ✅ Empty charts - NO fallback generation!
 	};
 }
 

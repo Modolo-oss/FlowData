@@ -226,3 +226,133 @@ export async function decryptAuditPayload(
 	}
 }
 
+/**
+ * Encrypt binary file (any format) with Seal SDK before uploading to Walrus
+ * Returns encrypted data and txBytes (required for decryption)
+ */
+export async function encryptFile(
+	fileBuffer: Buffer | Uint8Array,
+	userAddress?: string
+): Promise<{
+	encryptedData: Buffer; // Encrypted binary data
+	txBytes: string; // Base64 encoded transaction bytes (required for decryption)
+}> {
+	try {
+		const seal = await getSealClient();
+		if (!seal) {
+			// Fallback: return plain buffer (no encryption)
+			console.warn("[SEAL] Seal client not available, storing plain file");
+			return {
+				encryptedData: Buffer.isBuffer(fileBuffer) ? fileBuffer : Buffer.from(fileBuffer),
+				txBytes: "",
+			};
+		}
+
+		// Convert to Uint8Array
+		const dataArray = Buffer.isBuffer(fileBuffer) 
+			? new Uint8Array(fileBuffer) 
+			: fileBuffer instanceof Uint8Array 
+				? fileBuffer 
+				: new Uint8Array(fileBuffer);
+		
+		const id = userAddress || "0x0000000000000000000000000000000000000000000000000000000000000000";
+		const policyPackageId = config.sealPolicyPackageId || SEAL_TESTNET_PACKAGE_ID;
+
+		// Encrypt using Seal SDK
+		const encrypted = await seal.encrypt({
+			packageId: policyPackageId,
+			id,
+			threshold: 1,
+			data: dataArray,
+		});
+
+		// Extract txBytes from encrypt response (required for decryption)
+		const txBytesArray = (encrypted as any).txBytes || (encrypted as any).transactionBytes || new Uint8Array();
+		const encryptedObject = encrypted.encryptedObject || encrypted;
+
+		// Convert encrypted object to Buffer
+		let encryptedData: Buffer;
+		if (Array.isArray(encryptedObject)) {
+			encryptedData = Buffer.from(encryptedObject);
+		} else if (encryptedObject instanceof Uint8Array) {
+			encryptedData = Buffer.from(encryptedObject);
+		} else if (typeof encryptedObject === "string") {
+			encryptedData = Buffer.from(encryptedObject, "base64");
+		} else {
+			// If it's an object, serialize to JSON then to buffer
+			encryptedData = Buffer.from(JSON.stringify(encryptedObject), "utf-8");
+		}
+
+		const txBytes = Buffer.from(txBytesArray).toString("base64");
+
+		console.log(`[SEAL] ✅ Encrypted file (${dataArray.length} bytes -> ${encryptedData.length} bytes)`);
+
+		return {
+			encryptedData,
+			txBytes,
+		};
+	} catch (error: any) {
+		console.error("[SEAL] File encryption error:", error?.message || error);
+		// Fallback: return plain buffer
+		return {
+			encryptedData: Buffer.isBuffer(fileBuffer) ? fileBuffer : Buffer.from(fileBuffer),
+			txBytes: "",
+		};
+	}
+}
+
+/**
+ * Decrypt binary file from Walrus using Seal SDK
+ * Requires encryptedData and txBytes from encryption
+ */
+export async function decryptFile(
+	encryptedData: Buffer | Uint8Array,
+	txBytes: string,
+	sessionKey?: string
+): Promise<Buffer> {
+	try {
+		const seal = await getSealClient();
+		if (!seal) {
+			// Fallback: return plain buffer (no decryption)
+			console.warn("[SEAL] Seal client not available, returning plain file");
+			return Buffer.isBuffer(encryptedData) ? encryptedData : Buffer.from(encryptedData);
+		}
+
+		// If no txBytes, assume it's plain (not encrypted)
+		if (!txBytes || txBytes === "") {
+			console.log("[SEAL] No txBytes, returning plain file");
+			return Buffer.isBuffer(encryptedData) ? encryptedData : Buffer.from(encryptedData);
+		}
+
+		// Convert encrypted data to Uint8Array
+		const encryptedArray = Buffer.isBuffer(encryptedData) 
+			? new Uint8Array(encryptedData) 
+			: encryptedData instanceof Uint8Array 
+				? encryptedData 
+				: new Uint8Array(encryptedData);
+		
+		const txBytesArray = Buffer.from(txBytes, "base64");
+
+		// Decrypt using Seal SDK
+		const decryptParams: any = {
+			data: encryptedArray,
+			txBytes: txBytesArray instanceof Uint8Array ? txBytesArray : new Uint8Array(txBytesArray),
+		};
+		
+		// Add sessionKey if provided
+		if (sessionKey) {
+			decryptParams.sessionKey = new Uint8Array(Buffer.from(sessionKey, "base64"));
+		}
+		
+		const decrypted = await seal.decrypt(decryptParams);
+
+		console.log(`[SEAL] ✅ Decrypted file (${encryptedArray.length} bytes -> ${Buffer.from(decrypted).length} bytes)`);
+
+		return Buffer.from(decrypted);
+	} catch (error: any) {
+		console.error("[SEAL] File decryption error:", error?.message || error);
+		// Fallback: try to return as-is (maybe it's plain)
+		return Buffer.isBuffer(encryptedData) ? encryptedData : Buffer.from(encryptedData);
+	}
+}
+

@@ -11,7 +11,7 @@ import ChartsGrid from '@/components/charts-grid'
 import InsightCard from '@/components/insight-card'
 import PromptInput from '@/components/prompt-input'
 import { toast } from 'sonner'
-import { regenerateInsights } from '@/lib/api'
+import { regenerateInsights, downloadFile } from '@/lib/api'
 
 // New AnalysisResult structure matching backend
 interface AnalysisResult {
@@ -100,6 +100,10 @@ interface AnalysisResult {
     blobObjectId?: string
     suiTxHash?: string
   }
+  
+  // Privacy & Encryption (Seal SDK)
+  sealEncrypted?: boolean
+  txBytes?: string // Base64 encoded transaction bytes (required for decryption)
 }
 
 export default function AnalysisPage() {
@@ -206,13 +210,47 @@ export default function AnalysisPage() {
               </p>
             </div>
             <div className="flex gap-2">
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={async () => {
+                  if (result?.blobId && result?.fileName) {
+                    try {
+                      // Get sessionKey from sessionStorage (stored during upload)
+                      const storedSessionKey = sessionStorage.getItem('sessionKey');
+                      
+                      // Get txBytes from result (for Seal decryption)
+                      const txBytes = (result as any).txBytes;
+                      
+                      const blobUrl = await downloadFile(
+                        result.blobId, 
+                        result.fileName,
+                        txBytes || undefined,
+                        storedSessionKey || undefined
+                      );
+                      const link = document.createElement('a');
+                      link.href = blobUrl;
+                      link.download = result.fileName || 'file';
+                      document.body.appendChild(link);
+                      link.click();
+                      document.body.removeChild(link);
+                      URL.revokeObjectURL(blobUrl);
+                      toast.success('File downloaded and decrypted successfully!');
+                    } catch (error: any) {
+                      toast.error(error.message || 'Failed to download file. Make sure you have the session key.');
+                    }
+                  } else {
+                    toast.error('File not available for download');
+                  }
+                }}
+                disabled={!result?.blobId}
+              >
+                <Download className="w-4 h-4 mr-2" />
+                Download File
+              </Button>
               <Button variant="outline" size="sm">
                 <Copy className="w-4 h-4 mr-2" />
                 Copy
-              </Button>
-              <Button variant="outline" size="sm">
-                <Download className="w-4 h-4 mr-2" />
-                Export
               </Button>
               <Button size="sm" className="bg-primary hover:bg-primary/90">
                 <Share2 className="w-4 h-4 mr-2" />

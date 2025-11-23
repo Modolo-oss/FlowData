@@ -49,7 +49,11 @@ export default function ChartsGrid({ data }: ChartsGridProps) {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       {/* Key-Value Bar Chart - Priority if available */}
-      {data.keyValueBarChart && data.keyValueBarChart.data.length > 0 && (
+      {data.keyValueBarChart && data.keyValueBarChart.data.length > 0 && 
+       // ✅ Only show if we have meaningful data (not synthetic labels)
+       data.keyValueBarChart.data.some(d => !d.name.toLowerCase().includes('outlier') && 
+                                            !d.name.toLowerCase().includes('row_') &&
+                                            !d.name.toLowerCase().includes('cluster')) && (
         <Card className="bg-card border-border">
           <CardHeader>
             <CardTitle className="text-lg">{data.keyValueBarChart.title}</CardTitle>
@@ -138,9 +142,10 @@ export default function ChartsGrid({ data }: ChartsGridProps) {
       {/* Trend Chart - Hidden if no time-based trends */}
 
       {/* Cluster Visualization - ONLY if we have meaningful clusters */}
-      {data.clusters && data.clusters.length > 0 && (() => {
+      {data.clusters && data.clusters.length >= 5 && (() => {
         const uniqueClusters = new Set(data.clusters.map(c => c.cluster));
-        return uniqueClusters.size >= 2 ? (
+        // ✅ Only show if we have at least 2 clusters AND at least 5 data points
+        return uniqueClusters.size >= 2 && data.clusters.length >= 5 ? (
           <Card className="bg-card border-border">
             <CardHeader>
               <CardTitle className="text-lg">Data Clusters</CardTitle>

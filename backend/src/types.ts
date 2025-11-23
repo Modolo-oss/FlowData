@@ -206,6 +206,14 @@ export interface AnalysisResult {
 	
 	// Chart data (for frontend rendering)
 	chartData: AnalysisSummary["chartsData"];
+	
+	// Privacy & Encryption (Seal SDK)
+	sealEncrypted?: boolean; // Whether file is encrypted with Seal
+	txBytes?: string; // Base64 encoded transaction bytes (required for decryption)
+	
+	// Encrypted file data (for frontend to upload to Walrus with wallet user)
+	encryptedFileData?: string; // Base64 encoded encrypted file
+	encryptedFileSize?: number; // Size of encrypted file in bytes
 }
 
 // Legacy types (kept for backward compatibility if needed)

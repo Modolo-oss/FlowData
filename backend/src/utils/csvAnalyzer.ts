@@ -119,7 +119,7 @@ function simpleCluster(
 	return clusters;
 }
 
-function parseCSV(csvText: string): Array<Record<string, string>> {
+export function parseCSV(csvText: string): Array<Record<string, string>> {
 	if (!csvText || csvText.trim().length === 0) {
 		console.warn("[CSV_PARSER] Empty CSV text");
 		return [];

@@ -1,6 +1,6 @@
 # FlowData Studio
 
-**AI-Powered Data Analysis Platform** with on-chain provenance and real-time insights. Transform your files (CSV, JSON, images, PDF, Word) into beautiful visualizations, AI-generated stories, and shareable insight cards with cryptographic verification.
+**AI-Powered Data Analysis Platform** with on-chain provenance and immediate insights. Transform your files (CSV, JSON, images, PDF, Word) into beautiful visualizations, AI-generated stories, and shareable insight cards with cryptographic verification.
 
 Built for the **Walrus Hackathon** using Sui, Walrus, and Seal SDKs.
 
@@ -24,7 +24,7 @@ FlowData Studio is an **AI-powered data analysis platform** that:
 ┌─────────────┐
 │   Frontend  │  Next.js + React + TypeScript
 │  (Port 3000)│  └─ Sui Wallet Integration
-│             │  └─ Real-time Progress (SSE)
+│             │  └─ Immediate Results Display
 │             │  └─ AI Story & Charts Display
 │             │  └─ Session Storage
 └──────┬──────┘
@@ -49,7 +49,7 @@ FlowData Studio is an **AI-powered data analysis platform** that:
 - **shadcn/ui** - UI components
 - **Recharts** - Data visualization
 - **Sui Wallet** - Session key generation
-- **SSE** - Real-time progress updates
+- **Session Storage** - Store analysis results for display
 
 **Backend** (Express.js + TypeScript):
 - **Express.js** - REST API server
@@ -79,7 +79,7 @@ User Upload File (any format)
 Backend:
   - Validates file
   - Detects file type (CSV, JSON, image, PDF, Word, text)
-  - Uploads file to Walrus (binary blob, ONCE)
+  - Returns result immediately (Walrus upload happens in background)
 ```
 
 ### 2. Data Analysis
@@ -91,7 +91,7 @@ Backend:
     * JSON: Flattens nested structures, extracts all keys
     * Images: Extracts metadata (width, height, format)
     * PDF/Word: Extracts text, counts words/chars/lines
-  - Generates charts dynamically from actual data
+  - Prepares data insights for LLM chart generation
 ```
 
 ### 3. AI Insight & Chart Generation
@@ -117,25 +117,25 @@ Backend:
   - Backend parses LLM chart specs and converts to frontend format
 ```
 
-### 4. On-Chain Provenance
+### 4. On-Chain Provenance (Background)
 
 ```
-Backend:
+Backend (non-blocking, happens after response):
   - Stores file to Walrus (binary blob, ~14 GB max)
   - Records on Sui:
     * Walrus blob ID
     * File hash
     * Analysis metadata
     * Transaction hash
+  - Updates are broadcast via SSE (optional)
 ```
 
 ### 5. Frontend Display
 
 ```
 Frontend:
-  - Real-time progress (SSE)
-  - AI-generated story
-  - Dynamic charts from actual data:
+  - AI-generated story (displayed immediately after upload)
+  - AI-generated charts (from LLM):
     * Correlation matrix (if applicable)
     * Trend analysis (if time-series)
     * Cluster visualization (if applicable)
@@ -212,7 +212,6 @@ npm run dev
 
 **API Endpoints**:
 - `GET /api/health` - Health check
-- `GET /api/progress` - SSE progress stream
 - `POST /api/upload` - Upload file (any format)
 - `POST /api/regenerate-insights` - Regenerate AI insights with new prompt
 
@@ -322,7 +321,6 @@ npm run dev
 │   ├── app/                    # Next.js app directory
 │   │   ├── page.tsx           # Home page
 │   │   ├── upload/            # Upload page
-│   │   ├── progress/          # Progress page
 │   │   └── analysis/          # Analysis results page
 │   ├── components/             # React components
 │   │   ├── ai-story.tsx       # AI story component
@@ -330,7 +328,6 @@ npm run dev
 │   │   ├── insight-card.tsx    # Shareable insight card
 │   │   └── prompt-input.tsx    # Prompt input for regenerate
 │   ├── hooks/                 # React hooks
-│   │   ├── use-progress.ts    # SSE progress hook
 │   │   └── use-sui-wallet.ts  # Sui wallet hook
 │   ├── lib/                   # Utilities
 │   │   ├── api.ts             # API client
@@ -374,16 +371,17 @@ npm run dev
 - Optional: Connect Sui Wallet for session key generation
 - Optional: Add custom prompt for personalized analysis
 
-### 2. Real-Time Progress
+### 2. Immediate Results
 
-- Watch progress in real-time via SSE
-- See analysis stages:
+- Results are returned immediately after upload
+- Analysis happens synchronously:
   - Validating file
   - Detecting file type
   - Analyzing data
   - Generating AI insights and charts (LLM-powered)
-  - Uploading to Walrus
-  - Recording on Sui
+- Background processing (non-blocking):
+  - Uploading file to Walrus
+  - Recording on Sui blockchain
 
 ### 3. View Insights
 
@@ -418,8 +416,7 @@ npm run dev
   - Form data: `file`, `prompt` (optional), `userAddress` (optional)
   - Response: `AnalysisResult` with insights, charts, blobId, suiTx
 
-**Progress**:
-- `GET /api/progress` - SSE progress stream (real-time updates)
+**Note**: Progress page removed - results are returned immediately after upload. SSE endpoint (`/api/progress`) is still available for background updates (blobId, suiTx) but not required for main flow.
 
 **Regenerate Insights**:
 - `POST /api/regenerate-insights` - Regenerate AI insights with new prompt
@@ -436,7 +433,7 @@ npm run dev
 1. Start backend and frontend
 2. Open http://localhost:3000
 3. Upload a file (CSV, JSON, image, PDF, Word, or text)
-4. Watch real-time progress
+4. View results immediately (no progress page needed)
 5. View AI-generated insights and charts
 6. Try regenerating insights with a new prompt
 

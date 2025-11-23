@@ -2,7 +2,8 @@
 
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
-import { Zap, BarChart3, Upload } from 'lucide-react'
+import { Zap, BarChart3, Upload, Wallet } from 'lucide-react'
+import { useSuiWallet } from '@/hooks/use-sui-wallet'
 
 interface NavigationProps {
   isAuthenticated: boolean
@@ -10,6 +11,9 @@ interface NavigationProps {
 }
 
 export default function Navigation({ isAuthenticated, onAuthChange }: NavigationProps) {
+  const wallet = useSuiWallet()
+  const isWalletConnected = wallet.connected
+
   return (
     <nav className="border-b border-border bg-card/50 backdrop-blur sticky top-0 z-50">
       <div className="container mx-auto px-4 h-16 flex items-center justify-between">
@@ -21,7 +25,7 @@ export default function Navigation({ isAuthenticated, onAuthChange }: Navigation
         </Link>
 
         <div className="hidden md:flex items-center gap-8">
-          {isAuthenticated && (
+          {isWalletConnected && (
             <>
               <Link href="/analysis" className="flex items-center gap-2 text-sm text-muted-foreground hover:text-primary transition">
                 <Zap className="w-4 h-4" />
@@ -31,29 +35,41 @@ export default function Navigation({ isAuthenticated, onAuthChange }: Navigation
                 <Upload className="w-4 h-4" />
                 Upload
               </Link>
-              <Link href="/progress" className="flex items-center gap-2 text-sm text-muted-foreground hover:text-primary transition">
-                <BarChart3 className="w-4 h-4" />
-                Progress
-              </Link>
             </>
           )}
         </div>
 
         <div className="flex items-center gap-3">
-          {isAuthenticated ? (
-            <Button 
-              variant="outline" 
-              size="sm"
-              onClick={() => onAuthChange(false)}
-            >
-              Disconnect
-            </Button>
+          {isWalletConnected ? (
+            <div className="flex items-center gap-3">
+              <div className="hidden sm:block text-xs text-muted-foreground font-mono">
+                {wallet.address?.slice(0, 6)}...{wallet.address?.slice(-4)}
+              </div>
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={() => {
+                  wallet.disconnect()
+                  onAuthChange(false)
+                }}
+              >
+                Disconnect
+              </Button>
+            </div>
           ) : (
             <Button 
               size="sm"
-              onClick={() => onAuthChange(true)}
+              onClick={async () => {
+                // Try to connect
+                await wallet.connect()
+                if (wallet.connected) {
+                  onAuthChange(true)
+                }
+              }}
+              disabled={wallet.loading}
             >
-              Connect Wallet
+              <Wallet className="w-4 h-4 mr-2" />
+              {wallet.loading ? 'Connecting...' : 'Connect Wallet'}
             </Button>
           )}
         </div>

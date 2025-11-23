@@ -53,24 +53,39 @@ export function generateChartsFromDataInsights(insights: DataInsights): ChartsDa
 		}
 	}
 	
-	// 3. Clusters: Only if we have meaningful clusters (2+ numeric columns, sufficient data)
+	// 3. Clusters: Only if we have meaningful clusters (2+ numeric columns, sufficient data, and meaningful distribution)
 	const clusters = (insights.clusters || []).filter((cluster, idx, arr) => {
 		// Only keep clusters if we have meaningful spread (not all same cluster)
 		const uniqueClusters = new Set(arr.map(c => c.cluster));
-		return uniqueClusters.size >= 2; // Only if we have multiple clusters
+		// ✅ MUST have at least 2 different clusters AND at least 5 data points to be meaningful
+		return uniqueClusters.size >= 2 && arr.length >= 5;
 	});
 	
 	// Generate key-value bar chart if detected
+	// ✅ ONLY generate if we have actual meaningful key-value pairs (not synthetic/derived labels)
 	let keyValueBarChart: { title: string; data: Array<{ name: string; value: number }> } | undefined;
 	if (insights.isKeyValueStructure && insights.keyColumn && insights.valueColumn && insights.keyValuePairs) {
-		keyValueBarChart = {
-			title: `${insights.keyColumn} vs ${insights.valueColumn}`,
-			data: insights.keyValuePairs.map(kv => ({
-				name: kv.key,
-				value: kv.value,
-			})),
-		};
-		console.log(`[CHARTS] Generated key-value bar chart: ${keyValueBarChart.data.length} entries`);
+		// Filter out synthetic/derived labels (like "outlier_row_9", "cluster_A", etc.)
+		const validPairs = insights.keyValuePairs.filter(kv => {
+			const key = kv.key.toLowerCase();
+			// Skip synthetic labels
+			if (key.includes('outlier') || key.includes('row_') || key.includes('cluster') || 
+			    key.includes('sample_') || key.includes('index_') || key.includes('point_')) {
+				return false;
+			}
+			return true;
+		});
+		
+		if (validPairs.length > 0) {
+			keyValueBarChart = {
+				title: `${insights.keyColumn} Distribution`,
+				data: validPairs.map(kv => ({
+					name: kv.key.length > 30 ? kv.key.substring(0, 30) + '...' : kv.key, // Truncate long names
+					value: kv.value,
+				})),
+			};
+			console.log(`[CHARTS] Generated key-value bar chart: ${keyValueBarChart.data.length} entries (filtered ${insights.keyValuePairs.length - validPairs.length} synthetic entries)`);
+		}
 	}
 	
 	// Use outliers from insights (already detected from actual CSV rows)
@@ -137,22 +152,54 @@ export function convertLLMChartsToChartsData(
 	).flat() || [];
 	
 	// ✅ Use LLM-generated bar charts (convert first one to keyValueBarChart if needed)
+	// ✅ Filter out synthetic/fake labels from LLM-generated charts
 	let keyValueBarChart: { title: string; data: Array<{ name: string; value: number }> } | undefined;
 	if (llmCharts.barCharts && llmCharts.barCharts.length > 0) {
-		keyValueBarChart = llmCharts.barCharts[0];
+		const chart = llmCharts.barCharts[0];
+		// Filter out synthetic labels (outlier_row_X, cluster_A, sample_N, etc.)
+		const validData = chart.data.filter(d => {
+			const name = String(d.name || '').toLowerCase();
+			return !name.includes('outlier') && !name.includes('row_') && 
+			       !name.includes('cluster') && !name.includes('sample_') &&
+			       !name.includes('index_') && !name.includes('point_') &&
+			       !name.includes('data point');
+		});
+		if (validData.length > 0) {
+			keyValueBarChart = { ...chart, data: validData };
+		}
 	} else if (llmCharts.pieCharts && llmCharts.pieCharts.length > 0) {
-		keyValueBarChart = llmCharts.pieCharts[0];
+		const chart = llmCharts.pieCharts[0];
+		const validData = chart.data.filter(d => {
+			const name = String(d.name || '').toLowerCase();
+			return !name.includes('outlier') && !name.includes('row_') && 
+			       !name.includes('cluster') && !name.includes('sample_');
+		});
+		if (validData.length > 0) {
+			keyValueBarChart = { ...chart, data: validData };
+		}
 	}
 	
 	// ✅ Use LLM-generated scatter plots as clusters
+	// ✅ Only if we have meaningful data (5+ points, not synthetic labels)
 	const clusters = llmCharts.scatterPlots?.flatMap(sp => 
-		sp.data.map((d, idx) => ({
-			x: d.x,
-			y: d.y,
-			cluster: String(idx % 3), // Simple cluster assignment
-			label: d.label || sp.title,
-		}))
-	) || [];
+		sp.data
+			.filter(d => {
+				// Filter out synthetic labels
+				const label = String(d.label || '').toLowerCase();
+				return !label.includes('outlier') && !label.includes('row_') &&
+				       !label.includes('sample_') && !label.includes('point_');
+			})
+			.map((d, idx) => ({
+				x: d.x,
+				y: d.y,
+				cluster: String(idx % 3), // Simple cluster assignment
+				label: d.label || sp.title,
+			}))
+	).filter((c, idx, arr) => {
+		// Only keep if we have at least 5 points and 2+ unique clusters
+		const uniqueClusters = new Set(arr.map(a => a.cluster));
+		return arr.length >= 5 && uniqueClusters.size >= 2;
+	}) || [];
 	
 	// ✅ Use LLM-generated correlations
 	const correlationMatrix = llmCharts.correlations || [];

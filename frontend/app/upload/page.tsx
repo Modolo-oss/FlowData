@@ -6,7 +6,7 @@ import Navigation from '@/components/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Upload, CheckCircle2, AlertCircle, Wallet } from 'lucide-react'
-import { uploadFile } from '@/lib/api'
+import { uploadFile, uploadToWalrusWithWallet } from '@/lib/api'
 import { generateSessionKey, generateEphemeralSessionKey } from '@/lib/sessionKey'
 import { useSuiWallet } from '@/hooks/use-sui-wallet'
 import PromptInput from '@/components/prompt-input'
@@ -124,6 +124,7 @@ export default function UploadPage() {
         }
       }
 
+      // Step 1: Upload file to backend (get encrypted file + analysis results)
       const result = await uploadFile(
         uploadedFile,
         prompt || undefined,
@@ -131,17 +132,57 @@ export default function UploadPage() {
         wallet.address || undefined
       )
 
-      if (result.success) {
-        toast.success('File uploaded successfully! Redirecting to progress...')
-        // Store jobId in sessionStorage for progress page
-        if (result.jobId) {
-          sessionStorage.setItem('currentJobId', result.jobId)
-        }
-        router.push('/progress')
-      } else {
+      if (!result.success || !result.result) {
         toast.error(result.error || 'Upload failed')
         setIsLoading(false)
+        return
       }
+
+      // Step 2: Upload encrypted file to Walrus with wallet user signing
+      if (result.result.encryptedFileData && wallet.connected && wallet.signTransactionBlock) {
+        try {
+          toast.info('Uploading encrypted file to Walrus with your wallet...')
+          
+          const walrusResult = await uploadToWalrusWithWallet(
+            {
+              encryptedFileData: result.result.encryptedFileData,
+              fileName: result.result.fileName,
+              userAddress: wallet.address!,
+              fileHash: result.result.fileHash,
+              fileSize: result.result.encryptedFileSize,
+              fileType: result.result.fileType,
+              num_samples: result.result.analysisSummary?.dataInsights?.num_samples || 0,
+              columns: result.result.analysisSummary?.dataInsights?.columns?.length || 0,
+            },
+            wallet.signTransactionBlock
+          )
+
+          if (walrusResult.success && walrusResult.blobId) {
+            // Update result with Walrus upload info
+            result.result.blobId = walrusResult.blobId
+            result.result.walrusScanUrl = walrusResult.walrusScanUrl
+            result.result.suiTx = walrusResult.suiTx
+            result.result.suiExplorerUrl = walrusResult.suiExplorerUrl
+            toast.success('File uploaded to Walrus successfully!')
+          } else {
+            console.warn('[WALRUS] Upload failed, but analysis results are available:', walrusResult.error)
+            toast.warning('Analysis complete, but Walrus upload failed. Results still available.')
+          }
+        } catch (error: any) {
+          console.error('[WALRUS] Upload error:', error)
+          toast.warning('Analysis complete, but Walrus upload failed. Results still available.')
+          // Continue anyway - analysis results are still available
+        }
+      }
+
+      toast.success('File uploaded successfully! Redirecting to results...')
+      // Store result in sessionStorage for analysis page
+      sessionStorage.setItem('trainingResult', JSON.stringify(result.result))
+      // Store sessionKey for file decryption later
+      if (finalSessionKey) {
+        sessionStorage.setItem('sessionKey', finalSessionKey)
+      }
+      router.push('/analysis')
     } catch (error: any) {
       console.error('Error:', error)
       toast.error(error.message || 'Upload failed')
@@ -170,14 +211,14 @@ export default function UploadPage() {
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2">
                 <Wallet className="w-5 h-5" />
-                Encryption Setup (Optional)
+                Encryption Setup (Required)
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               {!wallet.connected ? (
                 <div className="space-y-3">
                   <p className="text-sm text-muted-foreground">
-                    Connect your Sui Wallet for encrypted data analysis, or use ephemeral encryption.
+                    <strong>Wallet connection required:</strong> Connect your Sui Wallet to enable file encryption with Seal SDK. Your files will be encrypted before storing on Walrus.
                   </p>
                   <Button
                     type="button"

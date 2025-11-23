@@ -8,13 +8,13 @@ import cors from "cors";
 import multer from "multer";
 import crypto from "crypto";
 import { AnalysisResult, AuditPayload, AnalysisSummary } from "../types.js";
-import { storeToWalrus, readFromWalrus } from "../proofs/walrus.js";
+import { storeToWalrus, readFromWalrus, readBinaryFileFromWalrus } from "../proofs/walrus.js";
 import { recordOnSui } from "../proofs/sui.js";
 import { config } from "../config.js";
 import { generateInsightFromAnalysis } from "../services/llm-new.js";
 import { analyzeFile } from "../utils/fileAnalyzer.js";
-import { generateChartsFromDataInsights, convertLLMChartsToChartsData } from "../utils/chartGenerator.js";
-import { encryptAuditPayload } from "../proofs/seal-audit.js";
+import { convertLLMChartsToChartsData } from "../utils/chartGenerator.js";
+import { encryptAuditPayload, encryptFile, decryptFile } from "../proofs/seal-audit.js";
 
 const PORT = config.coordinatorPort;
 
@@ -139,6 +139,12 @@ app.post("/api/upload", upload.single("file"), async (req, res) => {
 
 		const prompt = (req.body?.prompt as string) || "";
 		const userAddress = (req.body?.userAddress as string) || "";
+		const sessionKey = (req.body?.sessionKey as string) || "";
+
+		// ✅ PRIVACY: Require wallet connection for encryption
+		if (!userAddress) {
+			return res.status(400).json({ error: "Wallet connection required. Please connect your Sui wallet to enable file encryption." });
+		}
 
 		broadcast("status", { stage: "validating", message: "Validating file...", progress: 5 });
 		broadcast("progress", { stage: "validating", message: "Validating file...", progress: 5 });
@@ -153,12 +159,14 @@ app.post("/api/upload", upload.single("file"), async (req, res) => {
 		console.log(`[UPLOAD] File received: ${req.file.originalname}, size: ${req.file.size} bytes`);
 		const fileAnalysis = analyzeFile(req.file.buffer, req.file.originalname, broadcast);
 		const dataInsights = fileAnalysis.dataInsights;
+		const sampleRows = fileAnalysis.sampleRows; // ✅ Extract sample rows for LLM
 		
 		console.log(`[UPLOAD] Analysis result:`, {
 			fileType: fileAnalysis.fileType,
 			num_samples: dataInsights.num_samples,
 			columns: dataInsights.columns.length,
 			hasStatistics: !!dataInsights.statistics && Object.keys(dataInsights.statistics).length > 0,
+			sampleRowsCount: sampleRows?.length || 0,
 		});
 		
 		if (dataInsights.num_samples === 0) {
@@ -180,33 +188,86 @@ app.post("/api/upload", upload.single("file"), async (req, res) => {
 			llmInsights = await generateInsightFromAnalysis({
 				analysisSummary: {
 					dataInsights,
-					chartsData: generateChartsFromDataInsights(dataInsights), // Temporary fallback structure
+					chartsData: {
+						correlationMatrix: [],
+						trends: [],
+						clusters: [],
+						outliers: [],
+						summary: {
+							total_samples: dataInsights.num_samples,
+							numeric_columns: dataInsights.numeric_columns?.length || 0,
+							categorical_columns: dataInsights.categorical_columns?.length || 0,
+							strong_correlations: 0,
+							outliers_count: dataInsights.outliers?.length || 0,
+						},
+					},
+					sampleRows: sampleRows, // ✅ Pass actual data content to LLM!
 				},
 				userPrompt: prompt,
 			});
 			
-			// ✅ Use LLM-generated charts if available
+			// ✅ LLM-ONLY: Use LLM-generated charts ONLY - NO FALLBACK!
 			if (llmInsights.charts && Object.keys(llmInsights.charts).length > 0) {
 				console.log("[CHARTS] ✅ Using LLM-generated charts!");
 				chartsData = convertLLMChartsToChartsData(llmInsights.charts, dataInsights);
 			} else {
-				console.log("[CHARTS] ⚠️ No LLM charts, using fallback");
-				chartsData = generateChartsFromDataInsights(dataInsights);
+				console.log("[CHARTS] ⚠️ No LLM charts generated - returning empty charts (NO FALLBACK)");
+				// ✅ NO FALLBACK - return empty charts if LLM doesn't generate
+				chartsData = {
+					correlationMatrix: [],
+					trends: [],
+					clusters: [],
+					outliers: dataInsights.outliers || [],
+					summary: {
+						total_samples: dataInsights.num_samples,
+						numeric_columns: dataInsights.numeric_columns?.length || 0,
+						categorical_columns: dataInsights.categorical_columns?.length || 0,
+						strong_correlations: 0,
+						outliers_count: dataInsights.outliers?.length || 0,
+					},
+				};
 			}
 		} catch (err: any) {
-			console.warn("[LLM] Failed to generate insights:", err?.message || err);
-			// Fallback to hardcoded charts (but this shouldn't happen if LLM works)
-			chartsData = generateChartsFromDataInsights(dataInsights);
+			console.error("[LLM] ❌ Failed to generate insights:", err?.message || err);
+			// ✅ NO FALLBACK - return empty charts if LLM fails
+			llmInsights = {
+				title: "Data Analysis",
+				summary: "Failed to generate AI insights. Please check your OpenRouter API key configuration.",
+				keyFindings: [],
+				recommendations: [],
+				chartRecommendations: [],
+				charts: {},
+			};
+			chartsData = {
+				correlationMatrix: [],
+				trends: [],
+				clusters: [],
+				outliers: dataInsights.outliers || [],
+				summary: {
+					total_samples: dataInsights.num_samples,
+					numeric_columns: dataInsights.numeric_columns?.length || 0,
+					categorical_columns: dataInsights.categorical_columns?.length || 0,
+					strong_correlations: 0,
+					outliers_count: dataInsights.outliers?.length || 0,
+				},
+			};
 		}
+
+		// ✅ PRIVACY: Encrypt file BEFORE response (so txBytes is available immediately)
+		console.log(`[SEAL] Encrypting file with Seal (user: ${userAddress})...`);
+		const encryptionResult = await encryptFile(req.file.buffer, userAddress);
+		const encryptedFileBuffer = encryptionResult.encryptedData;
+		const txBytes = encryptionResult.txBytes;
+		console.log(`[SEAL] ✅ File encrypted (${req.file.buffer.length} -> ${encryptedFileBuffer.length} bytes)`);
 
 		// ✅ SIMPLE FLOW: Return hasil DULU, Walrus + Sui di background (tidak blocking)
 		broadcast("status", { stage: "complete", message: "Analysis complete!", progress: 100 });
 		broadcast("progress", { stage: "complete", message: "Analysis complete!", progress: 100 });
 		
 		// Return hasil LANGSUNG ke user (tidak tunggu Walrus + Sui)
-		const result: AnalysisResult = {
-			blobId: "", // Will be updated in background
-			suiTx: "", // Will be updated in background
+			const result: AnalysisResult = {
+			blobId: "", // Will be updated after frontend uploads to Walrus
+			suiTx: "", // Will be updated after frontend uploads to Walrus
 			analysisSummary: {
 				dataInsights,
 				chartsData,
@@ -216,6 +277,10 @@ app.post("/api/upload", upload.single("file"), async (req, res) => {
 			fileName: req.file.originalname,
 			fileType: fileAnalysis.fileType,
 			chartData: chartsData,
+			sealEncrypted: true, // File is encrypted with Seal
+			txBytes, // txBytes available immediately for decryption
+			encryptedFileData: encryptedFileBuffer.toString('base64'), // Base64 encoded encrypted file for frontend upload
+			encryptedFileSize: encryptedFileBuffer.length,
 		};
 
 		broadcast("complete", { result });
@@ -223,43 +288,11 @@ app.post("/api/upload", upload.single("file"), async (req, res) => {
 		// Return response LANGSUNG (user tidak perlu tunggu)
 		res.json({ success: true, result });
 
-		// ✅ BACKGROUND: Upload ke Walrus + Record Sui (tidak blocking response)
-		(async () => {
-			try {
-				broadcast("status", { stage: "uploading_walrus", message: "Storing file...", progress: 100 });
-				
-				// Upload ke Walrus
-				console.log(`[WALRUS] Uploading FILE (${req.file.originalname}) to Walrus...`);
-				const walrusResult = await storeToWalrus(req.file.buffer);
-				const blobId = walrusResult.blobId;
-				console.log(`[WALRUS] ✅ File uploaded: ${blobId}`);
-
-				// Record ke Sui
-				const suiResult = await recordOnSui({
-					walrusCid: blobId || "",
-					participants: userAddress ? [userAddress] : [],
-					fileHash: `0x${fileHash}`,
-					metadata: {
-						fileName: req.file.originalname,
-						fileSize: req.file.size,
-						fileType: fileAnalysis.fileType,
-						num_samples: dataInsights.num_samples,
-						columns: dataInsights.columns.length,
-					},
-				});
-
-				// Update broadcast dengan blobId & suiTx (jika client masih connected)
-				broadcast("update", {
-					blobId,
-					suiTx: suiResult.txHash,
-					walrusScanUrl: walrusResult.walrusScanUrl,
-					suiExplorerUrl: `https://suiexplorer.com/txblock/${suiResult.txHash}?network=testnet`,
-				});
-			} catch (err: any) {
-				console.error("[BACKGROUND] Failed to store to Walrus/Sui:", err?.message || err);
-				// Tidak perlu broadcast error - user sudah dapat hasil analysis
-			}
-		})();
+			// ✅ BACKGROUND: Walrus upload akan dilakukan di frontend dengan wallet user signing
+			// Backend hanya return encrypted file untuk frontend upload
+			console.log(`[WALRUS] Encrypted file ready for upload via wallet user signing`);
+			console.log(`[WALRUS] Frontend will upload to Walrus with wallet user, then call /api/record-walrus-upload`);
+			// Frontend akan upload ke Walrus dengan wallet user, lalu call endpoint untuk record
 	} catch (error: any) {
 		console.error("[UPLOAD] Error:", error?.message || error);
 		broadcast("error", { message: error?.message || "Upload failed" });
@@ -355,6 +388,137 @@ app.post("/api/regenerate-insights", async (req, res) => {
 	} catch (error: any) {
 		console.error("[REGENERATE] Error:", error?.message || error);
 		return res.status(500).json({ error: error?.message || "Failed to regenerate insights" });
+	}
+});
+
+/**
+ * Download/View Original File from Walrus
+ * GET /api/download-file?blobId=xxx&fileName=xxx
+ * Returns binary file with proper Content-Type headers
+ */
+app.get("/api/download-file", async (req, res) => {
+	try {
+		const { blobId, fileName, txBytes, sessionKey } = req.query;
+
+		if (!blobId || typeof blobId !== "string") {
+			return res.status(400).json({ error: "blobId is required" });
+		}
+
+		console.log(`[DOWNLOAD] Downloading file: ${blobId}`);
+
+		// Read encrypted binary file from Walrus
+		const fileData = await readBinaryFileFromWalrus(blobId);
+
+		// ✅ PRIVACY: Decrypt file with Seal if txBytes provided
+		let decryptedFile: Buffer;
+		if (txBytes && typeof txBytes === "string") {
+			console.log(`[SEAL] Decrypting file with Seal...`);
+			const sealSessionKey = sessionKey && typeof sessionKey === "string" ? sessionKey : undefined;
+			decryptedFile = await decryptFile(Buffer.from(fileData.data), txBytes, sealSessionKey);
+			console.log(`[SEAL] ✅ File decrypted (${fileData.size} -> ${decryptedFile.length} bytes)`);
+		} else {
+			// No encryption (fallback for old files)
+			console.log(`[DOWNLOAD] ⚠️ No txBytes provided, returning encrypted file (user needs to decrypt)`);
+			decryptedFile = Buffer.from(fileData.data);
+		}
+
+		// Determine MIME type from fileName or default to application/octet-stream
+		let mimeType = "application/octet-stream";
+		if (fileName && typeof fileName === "string") {
+			const ext = fileName.toLowerCase().split(".").pop();
+			const mimeTypes: Record<string, string> = {
+				csv: "text/csv",
+				json: "application/json",
+				txt: "text/plain",
+				pdf: "application/pdf",
+				doc: "application/msword",
+				docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+				png: "image/png",
+				jpg: "image/jpeg",
+				jpeg: "image/jpeg",
+				gif: "image/gif",
+				webp: "image/webp",
+			};
+			mimeType = mimeTypes[ext || ""] || mimeType;
+		}
+
+		// Set headers for file download
+		res.setHeader("Content-Type", mimeType);
+		res.setHeader("Content-Length", decryptedFile.length.toString());
+		if (fileName && typeof fileName === "string") {
+			res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(fileName)}"`);
+		}
+
+		// Send decrypted binary data
+		res.send(decryptedFile);
+
+		console.log(`[DOWNLOAD] ✅ File sent: ${blobId}, size: ${decryptedFile.length} bytes, type: ${mimeType}`);
+	} catch (error: any) {
+		console.error("[DOWNLOAD] Error:", error?.message || error);
+		res.status(500).json({ error: error?.message || "Failed to download file" });
+	}
+});
+
+/**
+ * Record Walrus upload after frontend uploads with wallet user
+ * Frontend calls this after successfully uploading encrypted file to Walrus
+ */
+app.post("/api/record-walrus-upload", async (req, res) => {
+	try {
+		const { blobId, fileHash, fileName, fileSize, fileType, userAddress, num_samples, columns } = req.body;
+
+		if (!blobId) {
+			return res.status(400).json({ error: "blobId is required" });
+		}
+
+		if (!userAddress) {
+			return res.status(400).json({ error: "userAddress is required" });
+		}
+
+		console.log(`[WALRUS] Recording Walrus upload (blobId: ${blobId}, user: ${userAddress})`);
+
+		// Record ke Sui
+		const suiResult = await recordOnSui({
+			walrusCid: blobId,
+			participants: [userAddress],
+			fileHash: fileHash || "",
+			metadata: {
+				fileName: fileName || "",
+				fileSize: fileSize || 0,
+				fileType: fileType || "",
+				num_samples: num_samples || 0,
+				columns: columns || 0,
+			},
+		});
+
+		const network = config.suiNetwork as "mainnet" | "testnet" | "devnet" | "localnet";
+		const walrusScanUrl = `https://scan.walrus.space/${network}/blob/${blobId}`;
+		const suiExplorerUrl = `https://suiexplorer.com/txblock/${suiResult.txHash}?network=${network}`;
+
+		console.log(`[WALRUS] ✅ Recorded Walrus upload:`);
+		console.log(`[WALRUS]   - Blob ID: ${blobId}`);
+		console.log(`[WALRUS]   - Sui TX: ${suiResult.txHash}`);
+		console.log(`[WALRUS]   - User: ${userAddress}`);
+
+		// Broadcast update (if client still connected)
+		broadcast("update", {
+			blobId,
+			suiTx: suiResult.txHash,
+			walrusScanUrl,
+			suiExplorerUrl,
+			sealEncrypted: true,
+		});
+
+		res.json({
+			success: true,
+			blobId,
+			suiTx: suiResult.txHash,
+			walrusScanUrl,
+			suiExplorerUrl,
+		});
+	} catch (error: any) {
+		console.error("[RECORD-WALRUS] Error:", error?.message || error);
+		res.status(500).json({ error: error?.message || "Failed to record Walrus upload" });
 	}
 });
 

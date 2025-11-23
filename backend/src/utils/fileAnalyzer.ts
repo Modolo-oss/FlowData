@@ -4,7 +4,7 @@
  */
 
 import { detectFileType, FileType } from "./fileTypeDetector.js";
-import { analyzeCSV, DataInsights } from "./csvAnalyzer.js";
+import { analyzeCSV, DataInsights, parseCSV } from "./csvAnalyzer.js";
 import { analyzeJSON } from "./jsonAnalyzer.js";
 import { analyzeImage } from "./imageAnalyzer.js";
 import { analyzePDF } from "./pdfAnalyzer.js";
@@ -15,6 +15,7 @@ export interface FileAnalysisResult {
 	dataInsights: DataInsights;
 	extractedText?: string;
 	metadata?: any;
+	sampleRows?: Array<Record<string, any>>; // ✅ Sample data rows for LLM analysis
 }
 
 export function analyzeFile(
@@ -51,11 +52,23 @@ export function analyzeFile(
 						outliers: [],
 					};
 				} else {
+					// ✅ Extract sample rows for LLM (actual data content)
+					const sampleRows = parseCSV(csvContent);
+					
 					dataInsights = analyzeCSV(csvContent);
 					extractedText = csvContent;
 					
+					// ✅ Store sample rows (first 20-30 rows for LLM analysis)
+					metadata = {
+						sampleRows: sampleRows.slice(0, 30).map((row, idx) => ({
+							row: idx + 1,
+							...row,
+						})),
+					};
+					
 					// Log for debugging
 					console.log(`[ANALYZER] CSV analyzed: ${dataInsights.num_samples} samples, ${dataInsights.columns.length} columns`);
+					console.log(`[ANALYZER] ✅ Extracted ${metadata.sampleRows.length} sample rows for LLM analysis`);
 					if (dataInsights.num_samples === 0) {
 						console.warn("[ANALYZER] CSV parsing resulted in 0 samples. Content preview:", csvContent.substring(0, 200));
 					}
@@ -240,6 +253,7 @@ export function analyzeFile(
 		dataInsights,
 		extractedText,
 		metadata,
+		sampleRows: metadata?.sampleRows || undefined, // ✅ Extract sampleRows from metadata
 	};
 }
 
